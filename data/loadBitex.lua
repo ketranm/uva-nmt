@@ -48,6 +48,7 @@ function DataLoader:__init(opt)
         self.vocab = torch.load(vocabFile)
         self.tracker = torch.load(indexFile)
     end
+    self.padIdx = self.vocab[2].word2idx['<pad>']
 
 end
 

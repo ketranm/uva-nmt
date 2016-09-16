@@ -37,15 +37,15 @@ function NMT:__init(opt)
     self.layer:add(nn.JoinTable(3))
     self.layer:add(nn.View(-1, 2 * hiddenSize))
     self.layer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
-    self.layer:add(nn.Tanh(1, true))
+    self.layer:add(nn.Tanh())
     self.layer:add(nn.Linear(hiddenSize, trgVocabSize, true))
     self.layer:add(nn.LogSoftMax())
 
     local weights = torch.ones(trgVocabSize)
-    weights[opt.pad_idx] = 0
+    weights[opt.padIdx] = 0
 
     self.sizeAverage = true
-    self.pad_idx = opt.pad_idx
+    self.padIdx = opt.padIdx
     self.criterion = nn.ClassNLLCriterion(weights, false)
     self.tot = torch.CudaTensor() -- count non padding symbols
     self.numSamples = 0
@@ -86,7 +86,7 @@ function NMT:forward(input, target)
 
     local logProb = self:stepDecoder(input[2])
     self.tot:resizeAs(target)
-    self.tot:ne(target, self.pad_idx)
+    self.tot:ne(target, self.padIdx)
     self.numSamples = self.tot:sum()
     local nll = self.criterion:forward(logProb, target)
     return nll / self.numSamples
@@ -151,6 +151,11 @@ function NMT:optimize(input, target)
         end
         local f = self:forward(input, target)
         self:backward(input, target)
+        local gradNorm = self.gradParams:norm()
+        -- clip gradient
+        if gradNorm > self.maxNorm then
+            self.gradNorm:mul(self.maxNorm / gradNorm)
+        end
         return f, self.gradParams
     end
     local _, fx = optim.adam(feval, self.params, self.optimConfig, self.optimStates)
