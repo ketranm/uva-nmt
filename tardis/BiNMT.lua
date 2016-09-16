@@ -31,7 +31,7 @@ function NMT:__init(opt)
     self.decoder:add(nn.LookupTable(trgVocabSize, embeddingSize))
     self.decoder:add(cudnn.GRU(embeddingSize, hiddenSize, 1, true))
 
-    self.glimpse = nn.GlimpseDot(opt.hiddenSize)
+    self.glimpse = nn.GlimpseDot(hiddenSize)
 
     self.layer = nn.Sequential()
     self.layer:add(nn.JoinTable(3))
@@ -286,27 +286,19 @@ function NMT:indexDecoderState(index)
     Return:
     - `state` : new hidden state of the decoder, indexed by the argument
     --]]
-
-    local currState = self.decoder:lastState()
-    local newState = {}
-    for _, state in ipairs(currState) do
-        local sk = {}
-        for _, s in ipairs(state) do
-            table.insert(sk, s:index(1, index))
-        end
-        table.insert(newState, sk)
-    end
-
-    -- here, it make sense to update the buffer as well
+    -- hummm, maybe should factorize it more
+    local currState = self.decoder:get(2).hiddenOutput -- (1, N, H)
     local buffers = self.buffers
-    buffers.prevState = newState
+    -- here, it make sense to update the buffer as well
+    buffers.prevState = currState:index(2, index)
+    -- indexing here's slow, maube narrow with certain condition?
     buffers.outputEncoder = buffers.outputEncoder:index(1, index)
-
-    return newState
+    return buffers.prevState
 end
 
 function NMT:clearState()
     self.encoder:clearState()
     self.decoder:clearState()
     self.layer:clearState()
+    self.glimpse:clearState()
 end
