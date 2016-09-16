@@ -5,7 +5,8 @@ require 'cutorch'
 require 'cunn'
 
 require 'data.loadBitex'
-require 'tardis.BiNMT' -- for the love of speed
+--require 'tardis.BiNMT' -- for the love of speed
+require 'tardis.NMTA' -- for the love of speed
 --require 'search.Beam'
 
 
@@ -51,15 +52,22 @@ function train()
         --print('number of batches: ', nbatches)
         for i = 1, nbatches do
             local x, prev_y, next_y = prepro(loader:next())
-            nll = nll + model:optimize({x, prev_y}, next_y)
+            nll = nll + model:forward({x, prev_y}, next_y)
+            model:backward({x, prev_y}, next_y)
+            model:update(opt.learningRate)
+            --nll = nll + model:optimize({x, prev_y}, next_y)
             model:clearState()
             totwords = totwords + prev_y:numel()
             if i % opt.reportEvery == 0 then
-                xlua.progress(i, nbatches)
                 print(string.format('epoch %d\t train ppl = %.4f speed = %.4f word/sec', epoch, exp(nll/i),  totwords / timer:time().real))
+                xlua.progress(i, nbatches)
                 collectgarbage()
             end
         end
+        if epoch >= 3 then
+            opt.learningRate = opt.learningRate * 0.5
+        end
+
         timer:reset()
         -- not yet implemented
         loader:valid()

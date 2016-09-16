@@ -62,7 +62,7 @@ function DataLoader:valid()
     -- no need shuffle for validation
     self._tensorfiles = _.shuffle(self.tracker.valid.files)
     self.isize = 0
-    self.nbatches = self.tracker.train.nbatches
+    self.nbatches = self.tracker.valid.nbatches
 end
 
 function DataLoader:next()
