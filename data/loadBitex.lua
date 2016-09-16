@@ -129,7 +129,7 @@ function DataLoader:_createShard(buckets, batchSize, tracker)
     end
 
     local idx = #tracker.files + 1
-    local file = tracker.prefix .. idx .. '.t7'
+    local file = string.format('%s.shard_%d.t7', tracker.prefix, idx)
     table.insert(tracker.files, file)
     torch.save(file, shard)
     tracker.nbatches = tracker.nbatches + #shard

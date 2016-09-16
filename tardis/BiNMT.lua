@@ -10,11 +10,11 @@ local utils = require 'misc.utils'
 
 local NMT, parent = torch.class('nn.NMT', 'nn.Module')
 
-function NMT:__init(config)
+function NMT:__init(opt)
     -- build encoder
-    local srcVocabSize = config.srcVocabSize
-    local embeddingSize = config.embeddingSize
-    local hiddenSize = config.hiddenSize
+    local srcVocabSize = opt.srcVocabSize
+    local embeddingSize = opt.embeddingSize
+    local hiddenSize = opt.hiddenSize
     self.view1 = nn.View()
     self.view2 = nn.View()
     self.encoder = nn.Sequential()
@@ -26,12 +26,12 @@ function NMT:__init(config)
     self.encoder:add(self.view2)
 
     -- build decoder
-    local trgVocabSize = config.trgVocabSize
+    local trgVocabSize = opt.trgVocabSize
     self.decoder = nn.Sequential()
     self.decoder:add(nn.LookupTable(trgVocabSize, embeddingSize))
     self.decoder:add(cudnn.GRU(embeddingSize, hiddenSize, 1, true))
 
-    self.glimpse = nn.GlimpseDot(config.hiddenSize)
+    self.glimpse = nn.GlimpseDot(opt.hiddenSize)
 
     self.layer = nn.Sequential()
     self.layer:add(nn.JoinTable(3))
@@ -42,10 +42,10 @@ function NMT:__init(config)
     self.layer:add(nn.LogSoftMax())
 
     local weights = torch.ones(trgVocabSize)
-    weights[config.pad_idx] = 0
+    weights[opt.pad_idx] = 0
 
     self.sizeAverage = true
-    self.pad_idx = config.pad_idx
+    self.pad_idx = opt.pad_idx
     self.criterion = nn.ClassNLLCriterion(weights, false)
     self.tot = torch.CudaTensor() -- count non padding symbols
     self.numSamples = 0
@@ -62,8 +62,10 @@ function NMT:__init(config)
                                            self.decoder,
                                            self.glimpse,
                                            self.layer)
-    self.maxNorm = config.maxNorm or 5
-
+    self.maxNorm = opt.maxNorm or 5
+    -- for optim
+    self.optimConfig = {}
+    self.optimStates = {}
     -- use buffer to store all the information needed for forward/backward
     self.buffers = {}
     self.output = torch.LongTensor()
@@ -151,7 +153,7 @@ function NMT:optimize(input, target)
         self:backward(input, target)
         return f, self.gradParams
     end
-    local _, fx = optim.adam(feval, self.params, self.config, self.state)
+    local _, fx = optim.adam(feval, self.params, self.optimConfig, self.optimStates)
     return fx[1]
 end
 
