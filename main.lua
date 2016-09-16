@@ -30,7 +30,7 @@ local model = nn.NMT(opt)
 -- prepare data
 function prepro(input)
     local x, y = unpack(input)
-    local seqlen = target:size(2)
+    local seqlen = y:size(2)
     -- make contiguous and transfer to gpu
     x = x:contiguous():cuda()
     prev_y = y:narrow(2, 1, seqlen-1):contiguous():cuda()
@@ -61,13 +61,13 @@ function train()
         end
         timer:reset()
         -- not yet implemented
-        loader:readValid()
+        loader:valid()
         model:evaluate()
         local valid_nll = 0
-        local nbatches = loader:nbatches()
+        local nbatches = loader.nbatches
         for i = 1, nbatches do
-            local src, trg, nextTrg = prepro(loader:nextBatch())
-            valid_nll = valid_nll + model:forward({src, trg}, nextTrg:view(-1))
+            local x, prev_y, next_y = prepro(loader:next())
+            valid_nll = valid_nll + model:forward({x, prev_y}, next_y:view(-1))
             if i % 50 == 0 then collectgarbage() end
         end
 
@@ -76,7 +76,7 @@ function train()
         local checkpoint = string.format("%s/tardis_epoch_%d_%.4f.t7", opt.modelDir, epoch, valid_nll/nbatches)
         paths.mkdir(paths.dirname(checkpoint))
         print('save model to: ' .. checkpoint)
-        print('learningRate: ', opt.learningRate)
+        --print('learningRate: ', opt.learningRate)
         model:save(checkpoint)
 
     end
