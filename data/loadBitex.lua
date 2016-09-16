@@ -58,6 +58,13 @@ function DataLoader:train()
     self.nbatches = self.tracker.train.nbatches
 end
 
+function DataLoader:valid()
+    -- no need shuffle for validation
+    self._tensorfiles = _.shuffle(self.tracker.valid.files)
+    self.isize = 0
+    self.nbatches = self.tracker.train.nbatches
+end
+
 function DataLoader:next()
     local idx = 0
     if self.isize == 0 then
