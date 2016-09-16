@@ -11,9 +11,10 @@ require 'tardis.BiNMT' -- for the love of speed
 
 local timer = torch.Timer()
 torch.manualSeed(42)
-local cfg = require 'pl.opt'
+local cfg = require 'pl.config'
 local opt = cfg.read(arg[1])
 
+if not opt.gpuid then opt.gpuid = 0 end
 torch.manualSeed(opt.seed or 42)
 cutorch.setDevice(opt.gpuid + 1)
 cutorch.manualSeed(opt.seed or 42)

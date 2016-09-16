@@ -1,10 +1,10 @@
 -- using Bidirectional Encoder
 -- author: Ke Tran <m.k.tran@uva.nl>
 
-require 'GlimpseDot'
+require 'tardis.GlimpseDot'
 require 'optim'
 require 'cudnn'
-local model_utils = require 'core.model_utils'
+local model_utils = require 'tardis.model_utils'
 
 local utils = require 'misc.utils'
 
@@ -154,7 +154,7 @@ function NMT:optimize(input, target)
         local gradNorm = self.gradParams:norm()
         -- clip gradient
         if gradNorm > self.maxNorm then
-            self.gradNorm:mul(self.maxNorm / gradNorm)
+            self.gradParams:mul(self.maxNorm / gradNorm)
         end
         return f, self.gradParams
     end
