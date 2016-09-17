@@ -102,42 +102,19 @@ else
     local startTime = timer:time().real
     print('loading model...')
     model:load(opt.modelFile)
-    local loadTime = timer:time().real - startTime
-    print(string.format('done, loading time: %.4f sec', loadTime))
-    timer:reset()
-
     local file = io.open(opt.transFile, 'w')
-    local nbestFile = io.open(opt.transFile .. '.nbest', 'w')
-    -- if reference is provided compute BLEU score of each n-best
-    local refFile
-    if opt.refFile then
-        refFile = io.open(opt.refFile, 'r')
-    end
-
     -- create beam search object
-    opt.srcVocab, opt.trgVocab = unpack(loader.vocab)
+    opt.vocab = loader.vocab
     local bs = BeamSearch(opt)
     bs:use(model)
-
     local refLine
     local nbLines = 0
     for line in io.lines(opt.textFile) do
+        local translation = bs:run(line, opt.maxLength)
         nbLines = nbLines + 1
-        if refFile then refLine = refFile:read() end
-        local translation, nbestList = bs:search(line, opt.maxTrgLength, refLine)
         file:write(translation .. '\n')
         file:flush()
-        if nbestList then
-            nbestFile:write('SENTID=' .. nbLines .. '\n')
-            nbestFile:write(table.concat(nbestList, '\n') .. '\n')
-            nbestFile:flush()
-        end
+
     end
     file:close()
-    nbestFile:close()
-
-    local transTime = timer:time().real
-    print(string.format('Done (%d) sentences translated', nbLines))
-    print(string.format('Total time: %.4f sec', transTime))
-    print(string.format('Time per sentence: %.4f', transTime/nbLines))
 end
