@@ -20,10 +20,6 @@ function NMT:__init(opt)
     self.encoder = nn.Sequential()
     self.encoder:add(nn.LookupTable(srcVocabSize, embeddingSize))
     self.encoder:add(cudnn.GRU(embeddingSize, hiddenSize, opt.numLayers, true, opt.dropout))
-    --self.encoder:add(nn.Contiguous())
-    --self.encoder:add(self.view1)
-    --self.encoder:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
-    --self.encoder:add(self.view2)
 
     -- build decoder
     local trgVocabSize = opt.trgVocabSize
@@ -188,9 +184,6 @@ function NMT:stepEncoder(x)
     Parameters:
     - `x` : source tensor, can be a matrix (batch)
     --]]
-    --local N, T = x:size(1), x:size(2)
-    --self.view1:resetSize(N * T, -1)
-    --self.view2:resetSize(N, T, -1)
     local outputEncoder = self.encoder:forward(x)
     local prevState = self.encoder:get(2).hiddenOutput
     self.buffers = {outputEncoder = outputEncoder, prevState = prevState}
@@ -282,14 +275,16 @@ function NMT:indexDecoderState(index)
     Return:
     - `state` : new hidden state of the decoder, indexed by the argument
     --]]
-    -- hummm, maybe should factorize it more
-    local currState = self.decoder:get(2).hiddenOutput -- (1, N, H)
-    local buffers = self.buffers
-    -- here, it make sense to update the buffer as well
-    buffers.prevState = currState:index(2, index)
-    -- indexing here's slow, maube narrow with certain condition?
-    buffers.outputEncoder = buffers.outputEncoder:index(1, index)
-    return buffers.prevState
+    self.buffers.prevState = self.buffers.prevState:index(2, index)
+    if index:numel() ~= self.buffers.outputEncoder:size(1) then
+        self.buffers.outputEncoder = self.buffers.outputEncoder:index(1, index)
+    end
+end
+
+function NMT:repeatState(K)
+    -- useful for beam search
+    self.buffers.prevState = self.buffers.prevState:repeatTensor(1, K, 1)
+    self.buffers.outputEncoder = self.buffers.outputEncoder:repeatTensor(K, 1, 1)
 end
 
 function NMT:clearState()

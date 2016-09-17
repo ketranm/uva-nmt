@@ -7,7 +7,7 @@ require 'cunn'
 require 'data.loadBitex'
 --require 'tardis.BiNMT' -- for the love of speed
 require 'tardis.NMTA' -- for the love of speed
---require 'search.Beam'
+require 'tardis.BeamSearch'
 
 
 local timer = torch.Timer()
@@ -111,9 +111,9 @@ else
     local nbLines = 0
     for line in io.lines(opt.textFile) do
         local translation = bs:run(line, opt.maxLength)
-        nbLines = nbLines + 1
-        file:write(translation .. '\n')
-        file:flush()
+        --nbLines = nbLines + 1
+        --file:write(translation .. '\n')
+        --file:flush()
 
     end
     file:close()
