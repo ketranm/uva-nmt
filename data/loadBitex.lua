@@ -177,12 +177,12 @@ function DataLoader:text2tensor(textFiles, shardSize, batchSize, tracker)
         end
 
         -- add BOS and EOS to target
-        local trgIdx = {trgVocab['<s>']}
+        local trgIdx = {trgVocab.word2idx['<s>']}
         for _, tok in ipairs(trgTokens) do
             local tokidx = trgVocab.word2idx[tok] or trgVocab.word2idx['<unk>']
             table.insert(trgIdx, tokidx)
         end
-        table.insert(trgIdx, trgVocab['</s>'])
+        table.insert(trgIdx, trgVocab.word2idx['</s>'])
         -- add PAD to the end after EOS
         for i = 1, trgLength - #trgTokens do
             table.insert(trgIdx, trgVocab.word2idx['<pad>'])
