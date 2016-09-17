@@ -14,11 +14,7 @@ function BeamSearch:__init(opt)
     self.unkidx = self.vocab[2].word2idx['<unk>']
     self.padidx = self.vocab[2].word2idx['<pad>']
     self._ignore = {[self.bosidx] = true, [self.eosidx] = true}
-    print('special codes')
-    print('bos', self.bosidx)
-    print('eos', self.eosidx)
-    print('unk', self.unkidx)
-    print('pad', self.padidx)
+    self.normLength = opt.normLength
 end
 
 
@@ -40,6 +36,18 @@ function encodeString(input, word2idx, reverse)
     return output:view(1, -1)
 end
 
+function decodeString(input, idx2word, ignore)
+    -- from tensor to string
+    local input = input:view(-1)
+    local output = {}
+    for i = 1, input:numel() do
+        local idx = input[i]
+        if ignore and not ignore[idx] then
+            table.insert(output, idx2word[idx])
+        end
+    end
+    return table.concat(output, ' ')
+end
 
 function BeamSearch:run(x, maxLength)
     --[[
@@ -55,18 +63,20 @@ function BeamSearch:run(x, maxLength)
     local T = maxLength or utils.round(srcLength * 1.4)
     self.model:stepEncoder(x)
 
-    local hypos = torch.CudaTensor(T, K):fill(self.bosidx)
-
+    local hypos = torch.CudaTensor(K, T):fill(self.bosidx)
     local curIdx = torch.CudaTensor(1, 1):fill(self.bosidx)
     local logProb = self.model:stepDecoder(curIdx)
     local maxScores, indices = logProb:topk(K, true)
-
     local scores = maxScores:view(-1, 1)
-    hypos[1] = indices[1]
+
+    hypos[{{}, 1}] = indices[1]
     self.model:repeatState(K)
 
+    local nbestCands = {}
+    local nbestScores = {}
+
     for t = 1, T-1 do
-        local curIdx = hypos[t]:view(-1, 1)
+        local curIdx = hypos:select(2, t):view(-1, 1)
         local logProb = self.model:stepDecoder(curIdx)
         local maxScores, indices = logProb:topk(Nw, true)
         local curScores = scores:repeatTensor(1, Nw)
@@ -79,19 +89,49 @@ function BeamSearch:run(x, maxLength)
         local rowIdx = flatIdx:long():add(-1):div(nc):add(1):cuda()
         local colIdx = indices:view(-1):index(1, flatIdx)
 
-        -- check stop
-        local eos = colIdx:eq(self.eosidx)
-        if t < 10 then
-            print(hypos[{{1, t}, {}}])
-        end
-        if eos:sum() == 0 then
-            hypos = hypos:index(2, rowIdx) -- next hypos
-            hypos[t+1]:copy(colIdx)
-            self.model:indexDecoderState(rowIdx)
-        else
-            print('found hypos at t = ', t)
+        local xc = colIdx:eq(self.eosidx) --  completed candidates
+        local nx = xc:sum()
+        if nx > 0 then
+            -- fond a candiate
+            local cands = rowIdx:maskedSelect(xc)
+            local completedHypos = hypos:index(1, cands):narrow(2, 1, t)
+            local xscores = scores:index(1, xc)
+            for i = 1, nx do
+                local ouput = decodeString(completeHyps[i], self.vocab[2].idx2word, self._ignore)
+                local score = xscores[i]
+                if self.normLength then
+                    score = score / t
+                end
+                table.insert(nbestCands, output)
+                table.insert(nbestScores, score)
+            end
+            if nx == colIdx:numel() then break end
+
+            local rc = colIdx:ne(self.eos) -- remain hypotheses to expand
+            rowIdx = rowIdx:maskedSelect(rc)
+            colIdx = colIdx:maskedSelect(rc)
+            -- decrease K
+            K = rc:sum()
+            if K == 0 then break end
         end
 
+        hypos = hypos:index(1, rowIdx)
+        hypos[{{t+1}, {}}] = colIdx
+        self.model:indexDecoderState(rowIdx)
     end
-    print('-----')
+
+    if #nbestCands == 0 then
+        -- worst case scenario, we have to take the best possible candiate
+        assert(K = self.K)
+        for i = 1, K do
+            local ouput = decodeString(completeHyps[i], self.vocab[2].idx2word, self._ignore)
+            local score = xscores[i]
+            table.insert(nbestCands, output)
+            table.insert(nbestScores, score)
+        end
+    end
+
+    -- pick the best translation candiates
+    local score, idx = torch.Tensor(nbestScores):topk(1)
+    return nbestCands[idx[1]]
 end
