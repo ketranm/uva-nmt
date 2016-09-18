@@ -1,4 +1,7 @@
-require 'torch'
+-- modified from Justin Johnson' torch-rnn
+-- thanks Justin
+-- provide as much similar to cudnn interface
+-- Ke Tran <m.k.tran@uva.nl>
 require 'nn'
 
 
@@ -37,13 +40,16 @@ function layer:__init(inputSize, hiddenSize)
 
     self.h0 = torch.Tensor()
     self.c0 = torch.Tensor()
+
+    self.cellOutput = torch.Tensor()
+    self.hiddenOutput = torch.Tensor()
+
     self.rememberStates = false
+    self.batchFirst = true
 
-    self.grad_c0 = torch.Tensor()
-    self.grad_h0 = torch.Tensor()
-    self.grad_x = torch.Tensor()
-    self.gradInput = {self.grad_c0, self.grad_h0, self.grad_x}
-
+    self.gradCellInput = torch.Tensor()
+    self.gradHiddenInput = torch.Tensor()
+    self.gradInput = torch.Tensor()
 end
 
 
@@ -59,10 +65,33 @@ end
 
 
 function layer:resetStates()
-    self.h0 = self.h0.new()
-    self.c0 = self.c0.new()
+    self.hiddenOutput = self.hiddenOutput.new()
+    self.cellOutput = self.cellOutput.new()
 end
 
+function layer:lastStates()
+    local prev_T = self.cell:size(2)
+    return {self.cell[{{}, prev_T}], self.output[{{}, prev_T}]}
+end
+
+function layer:setStates(states)
+    local c0, h0 = unpack(states)
+    self.cellOutput:resizeAs(c0):copy(c0)
+    self.hiddenOutput:resizeAs(h0):copy(h0)
+    self.rememberStates = true
+end
+
+function layer:setGradStates(gradState)
+    self._setGrad = true
+    local dc0, dh0 = unpack(gradState)
+    self.gradCellInput:resizeAs(dc0):copy(dc0)
+    self.gradHiddenInput:resizeAs(dh0):copy(dh0)
+end
+
+
+function layer:gradStates()
+    return {self.gradCellInput, self.gradHiddenInput}
+end
 
 local function check_dims(x, dims)
     assert(x:dim() == #dims)
@@ -117,31 +146,21 @@ Output:
 
 
 function layer:updateOutput(input)
-    self.recompute_backward = true
-    local c0, h0, x = self:_unpack_input(input)
-    local N, T, D, H = self:_get_sizes(input)
+    local N, T, D = input:size(1), input:size(2), input:size(3)
+    local H = self.hiddenSize
 
-    self._return_grad_c0 = (c0 ~= nil)
-    self._return_grad_h0 = (h0 ~= nil)
-    if not c0 then
-        c0 = self.c0
-        if c0:nElement() == 0 or not self.rememberStates then
-            c0:resize(N, H):zero()
-        elseif self.rememberStates then
-            local prev_N, prev_T = self.cell:size(1), self.cell:size(2)
-            assert(prev_N == N, 'batch sizes must be constant to remember states')
-            c0:copy(self.cell[{{}, prev_T}])
-        end
+    self.recompute_backward = true
+
+    local c0 = self.cellOutput
+    local h0 = self.hiddenOutput
+    local x = input
+
+    if c0:numel() == 0 or not self.rememberStates then
+        c0:resize(N, H):zero()
     end
-    if not h0 then
-        h0 = self.h0
-        if h0:nElement() == 0 or not self.rememberStates then
-            h0:resize(N, H):zero()
-        elseif self.rememberStates then
-            local prev_N, prev_T = self.output:size(1), self.output:size(2)
-            assert(prev_N == N, 'batch sizes must be the same to remember states')
-            h0:copy(self.output[{{}, prev_T}])
-        end
+
+    if h0:numel() == 0 or not self.rememberStates then
+        h0:resize(N, H):zero()
     end
 
     local bias_expand = self.bias:view(1, 4 * H):expand(N, 4 * H)
@@ -182,11 +201,10 @@ function layer:backward(input, gradOutput, scale)
     self.recompute_backward = false
     scale = scale or 1.0
     assert(scale == 1.0, 'must have scale=1')
-    local c0, h0, x = self:_unpack_input(input)
-    if not c0 then c0 = self.c0 end
-    if not h0 then h0 = self.h0 end
+    local c0, h0 = self.cellOutput, self.hiddenOutput
+    local x = input
 
-    local grad_c0, grad_h0, grad_x = self.grad_c0, self.grad_h0, self.grad_x
+    local grad_c0, grad_h0, grad_x = self.gradCellInput, self.gradHiddenInput, self.gradInput
     local h, c = self.output, self.cell
     local grad_h = gradOutput
 
@@ -197,12 +215,20 @@ function layer:backward(input, gradOutput, scale)
     local grad_Wh = self.gradWeight[{{D + 1, D + H}}]
     local grad_b = self.gradBias
 
-    grad_h0:resizeAs(h0):zero()
-    grad_c0:resizeAs(c0):zero()
     grad_x:resizeAs(x):zero()
-    local grad_next_h = self.buffer1:resizeAs(h0):zero()
-    local grad_next_c = self.buffer2:resizeAs(c0):zero()
-
+    local grad_next_h = self.buffer1:resizeAs(h0)
+    local grad_next_c = self.buffer2:resizeAs(c0)
+    if self._setGrad then
+        grad_next_h:copy(grad_h0)
+        grad_next_c:copy(grad_c0)
+    else
+        grad_next_h:zero()
+        grad_next_c:zero()
+        grad_h0:resizeAs(h0):zero()
+        grad_c0:resizeAs(c0):zero()
+    end
+    -- ok, reset flag
+    self._setGrad = false
     for t = T, 1, -1 do
         local next_h, next_c = h[{{}, t}], c[{{}, t}]
         local prev_h, prev_c = nil, nil
@@ -257,15 +283,6 @@ function layer:backward(input, gradOutput, scale)
     end
     grad_h0:copy(grad_next_h)
     grad_c0:copy(grad_next_c)
-
-    if self._return_grad_c0 and self._return_grad_h0 then
-        self.gradInput = {self.grad_c0, self.grad_h0, self.grad_x}
-    elseif self._return_grad_h0 then
-        self.gradInput = {self.grad_h0, self.grad_x}
-    else
-        self.gradInput = self.grad_x
-    end
-
     return self.gradInput
 end
 
@@ -298,7 +315,6 @@ function layer:accGradParameters(input, gradOutput, scale)
         self:backward(input, gradOutput, scale)
     end
 end
-
 
 function layer:__tostring__()
     local name = torch.type(self)
