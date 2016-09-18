@@ -6,6 +6,9 @@ local Transducer, parent = torch.class('nn.Transducer', 'nn.Module')
 function Transducer:__init(vocabSize, inputSize, hiddenSize, numLayers, dropout, rememberStates)
     -- alias
     local V, D, H = vocabSize, inputSize, hiddenSize
+    self.dropout = dropout
+    self.rememberStates = rememberStates
+
     self._rnns = {}
     self.net = nn.Sequential()
     self.net:add(nn.LookupTable(V, D))
@@ -13,13 +16,13 @@ function Transducer:__init(vocabSize, inputSize, hiddenSize, numLayers, dropout,
         local prevSize = H
         if i == 1 then prevSize = D end
         local rnn = nn.LSTM(prevSize, H)
-        if rememberStates then
+        if self.rememberStates then
             rnn.rememberStates = true
         end
         table.insert(self._rnns, rnn)
         self.net:add(rnn)
-        if dropout then
-            self.net:add(nn.Dropout(dropout))
+        if self.dropout then
+            self.net:add(nn.Dropout(self.dropout))
         end
     end
 end

@@ -38,9 +38,6 @@ function layer:__init(inputSize, hiddenSize)
     self.buffer3 = torch.Tensor() -- This will be (1, 4H)
     self.grad_a_buffer = torch.Tensor() -- This will be (N, 4H)
 
-    self.h0 = torch.Tensor()
-    self.c0 = torch.Tensor()
-
     self.cellOutput = torch.Tensor()
     self.hiddenOutput = torch.Tensor()
 
