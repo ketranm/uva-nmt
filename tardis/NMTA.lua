@@ -11,21 +11,25 @@ local utils = require 'misc.utils'
 local NMT, parent = torch.class('nn.NMT', 'nn.Module')
 
 function NMT:__init(opt)
+    -- keep internal info
+    self.sourceSize = opt.srcVocabSize
+    self.targetSize = opt.trgVocabSize
+    self.inputSize = opt.embeddingSize
+    self.hiddenSize = opt.hiddenSize
     -- build encoder
     local srcVocabSize = opt.srcVocabSize
     local embeddingSize = opt.embeddingSize
     local hiddenSize = opt.hiddenSize
-    self.view1 = nn.View()
-    self.view2 = nn.View()
+
     self.encoder = nn.Sequential()
-    self.encoder:add(nn.LookupTable(srcVocabSize, embeddingSize))
+    self.encoder:add(nn.LookupTable(self.sourceSize, self.inputSize))
     self.encoder:add(cudnn.LSTM(embeddingSize, hiddenSize, opt.numLayers, true, opt.dropout))
 
     -- build decoder
     local trgVocabSize = opt.trgVocabSize
     self.decoder = nn.Sequential()
-    self.decoder:add(nn.LookupTable(trgVocabSize, embeddingSize))
-    self.decoder:add(cudnn.LSTM(embeddingSize, hiddenSize, opt.numLayers, true, opt.dropout))
+    self.decoder:add(nn.LookupTable(self.targetSize, self.inputSize))
+    self.decoder:add(cudnn.LSTM(embeddingSize, hiddenSize, opt.numLayers, true, opt.dropout, true))
 
     self.glimpse = nn.GlimpseDot(hiddenSize)
 
@@ -34,10 +38,10 @@ function NMT:__init(opt)
     self.layer:add(nn.View(-1, 2 * hiddenSize))
     self.layer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
     self.layer:add(nn.Tanh())
-    self.layer:add(nn.Linear(hiddenSize, trgVocabSize, true))
+    self.layer:add(nn.Linear(hiddenSize, self.targetSize, true))
     self.layer:add(nn.LogSoftMax())
 
-    local weights = torch.ones(trgVocabSize)
+    local weights = torch.ones(self.targetSize)
     weights[opt.padIdx] = 0
 
     self.sizeAverage = true
@@ -62,10 +66,17 @@ function NMT:__init(opt)
     -- for optim
     self.optimConfig = {}
     self.optimStates = {}
-    -- use buffer to store all the information needed for forward/backward
-    self.buffers = {}
-    self.output = torch.LongTensor()
+
+    -- create reference
 end
+
+
+function NMT:encoderStates()
+    self._encHidden = self.encoder:get(2).hiddenOutput
+    self._encCell = self.encoder:get(2).cellOutput
+end
+
+
 
 function NMT:forward(input, target)
     --[[ Forward pass of NMT
@@ -93,34 +104,39 @@ function NMT:backward(input, target)
     -- zero grad manually here
     self.gradParams:zero()
 
-    local buffers = self.buffers
-    local outputEncoder = buffers.outputEncoder
-    local outputDecoder = buffers.outputDecoder
-    local context = buffers.context
-    local logProb = buffers.logProb
+    local df = self.criterion:backward(self.logProb, target:view(-1))
+    -- alias
+    local context = self.glimpse.output
+    local outputDec = self.decoder.output
+    local outputEnc = self.encoder.output
 
-
-
-    local gradLoss = self.criterion:backward(self.logProb, target:view(-1))
-
-    local gradLayer = self.layer:backward({self.glimpseOutput, self.outputDecoder}, gradLoss)
+    local gradLayer = self.layer:backward({context, outputDec}, df)
     local gradDecoder = gradLayer[2] -- grad to decoder
     local gradGlimpse =
-        self.glimpse:backward({self.outputEncoder, self.outputDecoder}, gradLayer[1])
+        self.glimpse:backward({outputEnc, outputDec}, gradLayer[1])
 
     gradDecoder:add(gradGlimpse[2]) -- accumulate gradient in-place
 
     self.decoder:backward(input[2], gradDecoder)
 
     -- initialize gradient from decoder
-    local dhDec = self.decoder:get(2).gradHiddenInput
-    local dhEnc = self.encoder:get(2).gradHiddenInput
-    dhEnc:resizeAs(dhDec):copy(dhDec)
+    local dh0Dec = self.decoder:get(2).gradHiddenInput
+    local dc0Dec = self.decoder:get(2).gradCellInput
 
-    local dcDec = self.decoder:get(2).gradCellInput
-    local dcEnc = self.encoder:get(2).gradCellInput
-    dcEnc:resizeAs(dcDec):copy(dcDec)
+    if not self.encoder:get(2).gradHiddenOutput then
+        self.encoder:get(2).gradHiddenOutput = dh0Dec
+    else
+        local dh0Enc = self.encoder:get(2).gradHiddenOutput
+        dh0Enc:resizeAs(dh0Dec):copy(dh0Dec)
+    end
 
+    if not self.encoder:get(2).gradCellOutput then
+        self.encoder:get(2).gradCellOutput = dc0Dec
+    else
+        local dc0Enc = self.encoder:get(2).gradCellOutput
+        dc0Enc:resizeAs(dc0Dec):copy(dc0Dec)
+    end
+    
     local gradEncoder = gradGlimpse[1]
     self.encoder:backward(input[1], gradEncoder)
 end
@@ -177,25 +193,31 @@ end
 
 -- useful interface for beam search
 function NMT:stepEncoder(x)
-    self.outputEncoder = self.encoder:forward(x)
+    self.encoder:forward(x)
     self.hiddenOutput = self.encoder:get(2).hiddenOutput
     self.cellOutput = self.encoder:get(2).cellOutput
 end
 
 function NMT:stepDecoder(x)
     -- alias
-    local hiddenOutput = self.decoder:get(2).hiddenOutput
-    hiddenOutput:resizeAs(self.hiddenOutput):copy(self.hiddenOutput)
+    local h0 = self.hiddenOutput
+    local c0 = self.cellOutput
 
-    local cellOutput = self.decoder:get(2).cellOutput
-    cellOutput:resizeAs(self.cellOutput):copy(self.cellOutput)
+    local hiddenInput = self.decoder:get(2).hiddenInput
+    hiddenInput:resizeAs(h0):copy(h0)
+    local cellInput = self.decoder:get(2).cellInput
+    cellInput:resizeAs(c0):copy(c0)
 
-    self.outputDecoder = self.decoder:forward(x)
-    self.glimpseOutput = self.glimpse:forward({self.outputEncoder, self.outputDecoder})
-    self.logProb = self.layer:forward{self.glimpseOutput, self.outputDecoder}
+    local outputEnc = self.encoder.output
+    local outputDec = self.decoder:forward(x)
+    -- context
+    local context = self.glimpse:forward{outputEnc, outputDec}
+    self.logProb = self.layer:forward{context, outputDec}
 
-    self.hiddenOutput = self.decoder:get(2).hiddenOutput
-    self.cellOutput = self.decoder:get(2).cellOutput
+    h0 = self.decoder:get(2).hiddenOutput
+    c0 = self.decoder:get(2).cellOutput
+    self.hiddenOutput = h0
+    self.cellOutput = c0
 
     return self.logProb
 end
