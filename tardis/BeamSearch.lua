@@ -14,7 +14,7 @@ function BeamSearch:__init(opt)
     self.unkidx = self.vocab[2].word2idx['<unk>']
     self.padidx = self.vocab[2].word2idx['<pad>']
     self._ignore = {[self.bosidx] = true, [self.eosidx] = true}
-    self.normLength = opt.normLength
+    self.normLength = true --opt.normLength
 end
 
 
@@ -42,7 +42,7 @@ function decodeString(input, idx2word, ignore)
     local output = {}
     for i = 1, input:numel() do
         local idx = input[i]
-        if ignore and not ignore[idx] then
+        if  not ignore[idx] then
             table.insert(output, idx2word[idx])
         end
     end
@@ -57,7 +57,7 @@ function BeamSearch:run(x, maxLength)
     - ref: opition, if it is provided, report sentence BLEU score
     ]]
     self.model:clearState()
-    local K, Nw = self.K, 100 --self.Nw
+    local K, Nw = self.K, self.Nw
     local x = encodeString(x, self.vocab[1].word2idx, self.reverseInput)
     local srcLength = x:size(2)
     local T = maxLength or utils.round(srcLength * 1.4)
@@ -76,7 +76,7 @@ function BeamSearch:run(x, maxLength)
     local nbestScores = {}
 
     for t = 1, T-1 do
-        local curIdx = hypos:select(2, t):view(-1, 1)
+        local curIdx = hypos[{{}, {t}}]
         local logProb = self.model:stepDecoder(curIdx)
         local maxScores, indices = logProb:topk(Nw, true)
         local curScores = scores:repeatTensor(1, Nw)
@@ -95,9 +95,9 @@ function BeamSearch:run(x, maxLength)
             -- fond a candiate
             local cands = rowIdx:maskedSelect(xc)
             local completedHypos = hypos:index(1, cands):narrow(2, 1, t)
-            local xscores = scores:index(1, xc)
+            local xscores = scores:index(1, xc):view(-1)
             for i = 1, nx do
-                local ouput = decodeString(completeHyps[i], self.vocab[2].idx2word, self._ignore)
+                local output = decodeString(completedHypos[i], self.vocab[2].idx2word, self._ignore)
                 local score = xscores[i]
                 if self.normLength then
                     score = score / t
@@ -105,33 +105,35 @@ function BeamSearch:run(x, maxLength)
                 table.insert(nbestCands, output)
                 table.insert(nbestScores, score)
             end
+            print(nbestCands)
             if nx == colIdx:numel() then break end
 
-            local rc = colIdx:ne(self.eos) -- remain hypotheses to expand
+            local rc = colIdx:ne(self.eosidx) -- remain hypotheses to expand
             rowIdx = rowIdx:maskedSelect(rc)
             colIdx = colIdx:maskedSelect(rc)
-            -- decrease K
+            scores = scores:maskedSelect(rc)
             K = rc:sum()
             if K == 0 then break end
         end
 
         hypos = hypos:index(1, rowIdx)
-        hypos[{{t+1}, {}}] = colIdx
+        hypos[{{}, {t+1}}] = colIdx
         self.model:indexDecoderState(rowIdx)
     end
 
     if #nbestCands == 0 then
         -- worst case scenario, we have to take the best possible candiate
-        assert(K = self.K)
+        assert(K == self.K)
+        scores = scores:view(-1)
         for i = 1, K do
-            local ouput = decodeString(completeHyps[i], self.vocab[2].idx2word, self._ignore)
-            local score = xscores[i]
+            local output = decodeString(hypos[i], self.vocab[2].idx2word, self._ignore)
+            local score = scores[i]
             table.insert(nbestCands, output)
             table.insert(nbestScores, score)
         end
     end
 
-    -- pick the best translation candiates
-    local score, idx = torch.Tensor(nbestScores):topk(1)
+    -- pick the best translation candidates
+    local score, idx = torch.Tensor(nbestScores):topk(1, true)
     return nbestCands[idx[1]]
 end
