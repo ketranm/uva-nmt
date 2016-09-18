@@ -119,7 +119,7 @@ function NMT:backward(input, target)
 
     local dcDec = self.decoder:get(2).gradCellInput
     local dcEnc = self.encoder:get(2).gradCellInput
-    dcEnc:resizeAs(dcDec):copy(dcDec
+    dcEnc:resizeAs(dcDec):copy(dcDec)
 
     local gradEncoder = gradGlimpse[1]
     self.encoder:backward(input[1], gradEncoder)
