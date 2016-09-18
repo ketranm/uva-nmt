@@ -6,7 +6,8 @@ require 'cunn'
 
 require 'data.loadBitex'
 --require 'tardis.BiNMT' -- for the love of speed
-require 'tardis.SeqAtt' -- for the love of speed
+--require 'tardis.SeqAtt' -- for the love of speed
+require 'tardis.NMTA' -- for the love of speed
 require 'tardis.BeamSearch'
 
 
@@ -53,12 +54,12 @@ function train()
         for i = 1, nbatches do
 
             local x, prev_y, next_y = prepro(loader:next())
-            --[[
+
             nll = nll + model:forward({x, prev_y}, next_y)
             model:backward({x, prev_y}, next_y)
             model:update(opt.learningRate)
-            ]]
-            nll = nll + model:optimize({x, prev_y}, next_y)
+
+            --nll = nll + model:optimize({x, prev_y}, next_y)
             model:clearState()
             totwords = totwords + prev_y:numel()
             if i % opt.reportEvery == 0 then
@@ -67,7 +68,7 @@ function train()
                 collectgarbage()
             end
         end
-        if epoch >= 3 then
+        if epoch >= opt.decayAfter then
             opt.learningRate = opt.learningRate * 0.5
         end
 

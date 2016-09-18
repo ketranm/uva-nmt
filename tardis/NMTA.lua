@@ -192,7 +192,7 @@ function NMT:stepDecoder(x)
 
     self.outputDecoder = self.decoder:forward(x)
     self.glimpseOutput = self.glimpse:forward({self.outputEncoder, self.outputDecoder})
-    self.logProb = self.layer:forward{self.glimpseOutput, self.outputDecoder})
+    self.logProb = self.layer:forward{self.glimpseOutput, self.outputDecoder}
 
     self.hiddenOutput = self.decoder:get(2).hiddenOutput
     self.cellOutput = self.decoder:get(2).cellOutput
