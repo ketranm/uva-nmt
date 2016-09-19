@@ -156,7 +156,7 @@ function DataLoader:text2tensor(textFiles, shardSize, batchSize, tracker)
     -- helper
     local nsents = 0 -- sentence counter
     local buckets = {}
-    local diff = 10 -- maximum different in length of the target
+    local diff = 1 -- maximum different in length of the target
     local prime = 107
 
     for source, target in seq.zip(unpack(files)) do
@@ -166,6 +166,7 @@ function DataLoader:text2tensor(textFiles, shardSize, batchSize, tracker)
         local srcLength = #srcTokens
         local trgTokens = stringx.split(target, ' ')
         local trgLength = #trgTokens + diff - (#trgTokens % diff)
+        local trgLength = #trgTokens --+ diff - (#trgTokens % diff)
         -- hashing
         local bidx =  prime * srcLength + trgLength
         -- reverse the source sentence

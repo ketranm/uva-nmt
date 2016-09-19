@@ -202,6 +202,11 @@ function NMT:stepDecoder(x)
     -- alias
     local h0 = self.hiddenOutput
     local c0 = self.cellOutput
+    -- quick hack here
+    if not self.decoder:get(2).hiddenInput then
+        self.decoder:get(2).hiddenInput = h0.new()
+        self.decoder:get(2).cellInput = c0.new()
+    end
 
     local hiddenInput = self.decoder:get(2).hiddenInput
     hiddenInput:resizeAs(h0):copy(h0)

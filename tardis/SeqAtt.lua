@@ -57,6 +57,12 @@ function NMT:__init(opt)
     -- for optim
     self.optimConfig = {}
     self.optimStates = {}
+
+    --self:reset()
+end
+
+function NMT:reset()
+    self.params:uniform(-0.1, 0.1)
 end
 
 function NMT:forward(input, target)
