@@ -309,10 +309,11 @@ function layer:backward(input, gradOutput, scale)
 end
 
 function layer:indexStates(index)
-    -- when doing this, make sure rememberStates = true
     assert(self.rememberStates, 'error: self.rememberStates ~= true')
     self.cellOutput = self.cellOutput:index(1, index)
     self.hiddenOutput = self.hiddenOutput:index(1, index)
+    self.cellInput = self.cellInput:index(1, index)
+    self.hiddenInput = self.hiddenInput:index(1, index)
 end
 
 function layer:clearState()

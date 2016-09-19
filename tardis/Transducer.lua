@@ -79,6 +79,7 @@ end
 
 function Transducer:indexStates(index)
     for _, rnn in ipairs(self._rnns) do
+        rnn.rememberStates = true
         rnn:indexStates(index)
     end
 end

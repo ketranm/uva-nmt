@@ -237,16 +237,13 @@ function NMT:sample(nsteps, k)
     return self.output
 end
 
+function NMT:indexStates(index)
+    self.encOutput = self.encOutput:index(1, index)
+    self.decoder:indexStates(index)
+    self.prevStates = self.decoder:lastStates()
+end
+
 function NMT:indexDecoderState(index)
-    --[[ This method is useful for beam search.
-    It is similar to torch.index function, return a new state of kept index
-
-    Parameters:
-    - `index` : torch.LongTensor object
-
-    Return:
-    - `state` : new hidden state of the decoder, indexed by the argument
-    --]]
     self.decoder:indexStates(index)
 end
 
