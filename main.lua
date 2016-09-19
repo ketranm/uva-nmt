@@ -6,9 +6,9 @@ require 'cunn'
 
 require 'data.loadBitex'
 --require 'tardis.BiNMT' -- for the love of speed
---require 'tardis.SeqAtt' -- for the love of speed
-require 'tardis.NMTA' -- for the love of speed
-require 'tardis.BeamSearch'
+require 'tardis.SeqAtt' -- for the love of speed
+--require 'tardis.NMTA' -- for the love of speed
+--require 'tardis.BeamSearch'
 
 
 local timer = torch.Timer()
