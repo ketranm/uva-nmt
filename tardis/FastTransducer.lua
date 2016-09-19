@@ -55,8 +55,12 @@ end
 
 function Transducer:setGradStates(gradStates)
     local grad_c, grad_h = unpack(gradStates)
-    self._rnn.gradCellInput:resizeAs(grad_c):copy(grad_c)
-    self._rnn.gradHiddenInput:resizeAs(grad_h):copy(grad_h)
+    if not self._rnn.gradCellOutput then
+        self._rnn.gradCellOutput = grad_c.new()
+        self._rnn.gradHiddenOutput = grad_h.new()
+    end
+    self._rnn.gradCellOutput:resizeAs(grad_c):copy(grad_c)
+    self._rnn.gradHiddenOutput:resizeAs(grad_h):copy(grad_h)
 end
 
 function Transducer:indexStates(index)
