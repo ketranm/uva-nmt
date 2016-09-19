@@ -1,4 +1,3 @@
--- beamsearch class
 local BeamSearch = torch.class('BeamSearch')
 local _ = require 'moses'
 local utils = require 'misc.utils'
@@ -13,6 +12,7 @@ function BeamSearch:__init(opt)
     self.eosidx = self.vocab[2].word2idx['</s>']
     self.unkidx = self.vocab[2].word2idx['<unk>']
     self.padidx = self.vocab[2].word2idx['<pad>']
+    
     self._ignore = {[self.bosidx] = true, [self.eosidx] = true}
     self.normLength = true --opt.normLength
 end

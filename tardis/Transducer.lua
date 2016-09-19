@@ -77,6 +77,12 @@ function Transducer:setGradStates(gradStates)
     end
 end
 
+function Transducer:indexStates(index)
+    for _, rnn in ipairs(self._rnns) do
+        rnn:indexStates(index)
+    end
+end
+
 function Transducer:updateGradInput(input, gradOutput)
     self:backward(input, gradOutput, 0)
 end

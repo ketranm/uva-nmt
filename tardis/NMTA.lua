@@ -1,4 +1,3 @@
--- using Bidirectional Encoder
 -- author: Ke Tran <m.k.tran@uva.nl>
 
 require 'tardis.GlimpseDot'
@@ -136,7 +135,7 @@ function NMT:backward(input, target)
         local dc0Enc = self.encoder:get(2).gradCellOutput
         dc0Enc:resizeAs(dc0Dec):copy(dc0Dec)
     end
-    
+
     local gradEncoder = gradGlimpse[1]
     self.encoder:backward(input[1], gradEncoder)
 end

@@ -1,4 +1,3 @@
--- using Bidirectional Encoder
 -- author: Ke Tran <m.k.tran@uva.nl>
 
 require 'tardis.GlimpseDot'
@@ -248,16 +247,12 @@ function NMT:indexDecoderState(index)
     Return:
     - `state` : new hidden state of the decoder, indexed by the argument
     --]]
-    self.buffers.prevState = self.buffers.prevState:index(2, index)
-    if index:numel() ~= self.buffers.outputEncoder:size(1) then
-        self.buffers.outputEncoder = self.buffers.outputEncoder:index(1, index)
-    end
+    self.decoder:indexStates(index)
 end
 
-function NMT:repeatState(K)
+function NMT:repeatEncoderOutput(K)
     -- useful for beam search
-    self.buffers.prevState = self.buffers.prevState:repeatTensor(1, K, 1)
-    self.buffers.outputEncoder = self.buffers.outputEncoder:repeatTensor(K, 1, 1)
+    self.encOutput  = self.encOutput:repeatTensor(1, K, 1)
 end
 
 function NMT:clearState()
