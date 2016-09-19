@@ -31,10 +31,10 @@ function DataLoader:__init(opt)
     if not path.exists(vocabFile) then
         print('run pre-processing, one-time setup!')
         print('creating source vocabulary ...')
-        self.vocab[1] = self:_makeVocab(trainFiles[1], opt.srcVocabSize)
+        self.vocab[1] = self:_makeVocab(trainFiles[1], opt.sourceSize)
 
         print('creating target vocabulary ...')
-        self.vocab[2] = self:_makeVocab(trainFiles[2], opt.trgVocabSize)
+        self.vocab[2] = self:_makeVocab(trainFiles[2], opt.targetSize)
         torch.save(vocabFile, self.vocab)
 
         print('create training tensor files...')
