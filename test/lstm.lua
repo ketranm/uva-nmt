@@ -87,7 +87,10 @@ function tests.gradcheck()
     local dw = lstm.gradWeight:clone()
     local db = lstm.gradBias:clone()
 
-    local function fx(x) return lstm:forward(x) end
+    local function fx(x)
+        lstm:setStates({c0,h0})
+        return lstm:forward(x)
+    end
     local function fh0(h0)
         lstm:setStates({c0,h0})
         return lstm:forward(x)
@@ -101,6 +104,7 @@ function tests.gradcheck()
     local function fw(w)
         local old_w = lstm.weight:clone()
         lstm.weight = w
+        lstm:setStates({c0,h0})
         local out = lstm:forward(x)
         lstm.weight = old_w
         return out
@@ -109,6 +113,7 @@ function tests.gradcheck()
     local function fb(b)
         local old_b = lstm.bias:clone()
         lstm.bias = b
+        lstm:setStates({c0,h0})
         local out = lstm:forward(x)
         lstm.bias = old_b
         return out
@@ -139,13 +144,14 @@ function tests.carrystate()
     local final_h, final_c = nil, nil
     local dstate = nil
     local grad_c0, grad_h0 = unpack(lstm:gradStates())
-    local lr = 0.01
-    for t = 1, 4 do
+    local lr = 0.001
+    for t = 1, 5 do
         local x = torch.randn(N, T, D)
         local dout = torch.randn(N, T, H)
         local out = lstm:forward(x)
         lstm:zeroGradParameters()
         -- test zero out gradients
+
         tester:assertTensorEq(lstm.gradWeight, torch.zeros(D + H, 4 *H), 0)
         tester:assertTensorEq(lstm.gradBias, torch.zeros(4 *H), 0)
         if t > 1 then
@@ -159,16 +165,10 @@ function tests.carrystate()
         tester:assertTensorNe(lstm.gradWeight, torch.zeros(D + H, 4 *H), 0)
         tester:assertTensorNe(lstm.gradBias, torch.zeros(4 *H), 0)
 
-        if t == 1 then
-            tester:assertTensorEq(lstm.cellOutput, torch.zeros(N, H), 0)
-            tester:assertTensorEq(lstm.hiddenOutput, torch.zeros(N, H), 0)
-        elseif t > 1 then
-
-            tester:assertTensorEq(lstm.cellOutput, final_c, 0)
-            tester:assertTensorEq(lstm.hiddenOutput, final_h, 0)
-        end
         final_c = lstm.cell[{{}, T}]:clone()
         final_h = out[{{}, T}]:clone()
+        tester:assertTensorEq(lstm.cellOutput, final_c, 0)
+        tester:assertTensorEq(lstm.hiddenOutput, final_h, 0)
         local state = lstm:lastStates()
         lstm:setStates(state)
         dstate = lstm:gradStates()
@@ -178,10 +178,10 @@ function tests.carrystate()
     lstm:resetStates()
     local x = torch.randn(N, T, D)
     local dout = torch.randn(N, T, H)
-    lstm:forward(x)
-    lstm:backward(x, dout)
-    tester:assertTensorEq(lstm.cellOutput, torch.zeros(N, H), 0)
-    tester:assertTensorEq(lstm.hiddenOutput, torch.zeros(N, H), 0)
+    --lstm:forward(x)
+    --lstm:backward(x, dout)
+    --tester:assertTensorEq(lstm.cellInput, torch.zeros(N, H), 0)
+    --tester:assertTensorEq(lstm.hiddenInput, torch.zeros(N, H), 0)
 end
 
 tester:add(tests)

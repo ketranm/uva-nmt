@@ -38,14 +38,18 @@ function layer:__init(inputSize, hiddenSize)
     self.buffer3 = torch.Tensor() -- This will be (1, 4H)
     self.grad_a_buffer = torch.Tensor() -- This will be (N, 4H)
 
-    self.cellOutput = torch.Tensor()
-    self.hiddenOutput = torch.Tensor()
+    self.cellOutput     = torch.Tensor()  -- will be (N, H)
+    self.gradCellInput  = torch.Tensor() -- will be (N, H)
+    self.cellInput      = torch.Tensor() -- will be (N, H)
+    self.gradCellOutput = torch.Tensor() -- will be (N, H)
+
+    self.hiddenOutput       = torch.Tensor() -- will be (N, H)
+    self.hiddenInput        = torch.Tensor() -- will be (N, H)
+    self.gradHiddenInput    = torch.Tensor() -- will be (N, H)
+    self.gradHiddenOutput   = torch.Tensor() -- will be (N, H)
 
     self.rememberStates = false
     self.batchFirst = true
-
-    self.gradCellInput = torch.Tensor()
-    self.gradHiddenInput = torch.Tensor()
     self.gradInput = torch.Tensor()
 end
 
@@ -62,27 +66,28 @@ end
 
 
 function layer:resetStates()
-    self.hiddenOutput = self.hiddenOutput.new()
-    self.cellOutput = self.cellOutput.new()
+    -- erase hiddenInput and cellInput
+    -- so when the first forward pass is call, all will be zeros
+    self.hiddenInput = self.hiddenInput.new()
+    self.cellInput = self.cellInput.new()
 end
 
 function layer:lastStates()
-    local prev_T = self.cell:size(2)
-    return {self.cell[{{}, prev_T}], self.output[{{}, prev_T}]}
+    return {self.cellOutput, self.hiddenOutput}
 end
 
 function layer:setStates(states)
     local c0, h0 = unpack(states)
-    self.cellOutput:resizeAs(c0):copy(c0)
-    self.hiddenOutput:resizeAs(h0):copy(h0)
-    self.rememberStates = true
+    self.cellInput:resizeAs(c0):copy(c0)
+    self.hiddenInput:resizeAs(h0):copy(h0)
+    self._initStates = true -- FLAG
 end
 
 function layer:setGradStates(gradState)
     self._setGrad = true
-    local dc0, dh0 = unpack(gradState)
-    self.gradCellInput:resizeAs(dc0):copy(dc0)
-    self.gradHiddenInput:resizeAs(dh0):copy(dh0)
+    local grad_c, grad_h = unpack(gradState)
+    self.gradCellOutput:resizeAs(grad_c):copy(grad_c)
+    self.gradHiddenOutput:resizeAs(grad_h):copy(grad_h)
 end
 
 
@@ -143,21 +148,37 @@ Output:
 
 
 function layer:updateOutput(input)
-    local N, T, D = input:size(1), input:size(2), input:size(3)
+    -- alias
+    local x = input
+    local N, T, D = x:size(1), x:size(2), x:size(3)
+    assert(D == self.inputSize)
+
     local H = self.hiddenSize
-
-    self.recompute_backward = true
-
     local c0 = self.cellOutput
     local h0 = self.hiddenOutput
-    local x = input
-
-    if c0:numel() == 0 or not self.rememberStates then
-        c0:resize(N, H):zero()
-    end
-
-    if h0:numel() == 0 or not self.rememberStates then
-        h0:resize(N, H):zero()
+    c0:resize(N, H)
+    h0:resize(N, H)
+    -- if we set the states, the first forward pass will use
+    -- cellInput and hiddenInput, after that it depends on the rememberStates
+    -- if rememberStates = true, we copy over the cellOutput and hiddenOutput
+    -- to cellInput and hiddenInput, otherwise, reset cellInput and hiddenInput
+    -- to zero
+    if self._initStates then
+        check_dims(self.cellInput, {N, H})
+        c0:copy(self.cellInput)
+        h0:copy(self.hiddenInput)
+        -- we now can reset the flag
+        self._initStates = false
+    else
+        if self.rememberStates then
+            self.cellInput:resize(N, H):copy(c0)
+            self.hiddenInput:resize(H, H):copy(h0)
+        else
+            c0:zero()
+            h0:zero()
+            self.cellInput:resize(N, H):zero()
+            self.hiddenInput:resize(N, H):zero()
+        end
     end
 
     local bias_expand = self.bias:view(1, 4 * H):expand(N, 4 * H)
@@ -169,7 +190,6 @@ function layer:updateOutput(input)
     c:resize(N, T, H):zero()
     local prev_h, prev_c = h0, c0
     self.gates:resize(N, T, 4 * H):zero()
-
     for t = 1, T do
         local cur_x = x[{{}, t}]
         local next_h = h[{{}, t}]
@@ -189,8 +209,9 @@ function layer:updateOutput(input)
         prev_h, prev_c = next_h, next_c
     end
 
+    self.cellOutput:resize(N, H):copy(prev_c)
+    self.hiddenOutput:resize(N, H):copy(prev_h)
     return self.output
-
 end
 
 
@@ -198,10 +219,10 @@ function layer:backward(input, gradOutput, scale)
     self.recompute_backward = false
     scale = scale or 1.0
     assert(scale == 1.0, 'must have scale=1')
-    local c0, h0 = self.cellOutput, self.hiddenOutput
     local x = input
 
-    local grad_c0, grad_h0, grad_x = self.gradCellInput, self.gradHiddenInput, self.gradInput
+    local grad_c0, grad_h0  = self.gradCellOutput, self.gradHiddenOutput
+    local grad_x = self.gradInput
     local h, c = self.output, self.cell
     local grad_h = gradOutput
 
@@ -213,8 +234,11 @@ function layer:backward(input, gradOutput, scale)
     local grad_b = self.gradBias
 
     grad_x:resizeAs(x):zero()
+
+    local c0, h0 = self.cellInput, self.hiddenInput
     local grad_next_h = self.buffer1:resizeAs(h0)
     local grad_next_c = self.buffer2:resizeAs(c0)
+
     if self._setGrad then
         grad_next_h:copy(grad_h0)
         grad_next_c:copy(grad_c0)
@@ -278,8 +302,9 @@ function layer:backward(input, gradOutput, scale)
         grad_next_h:mm(grad_a, Wh:t())
         grad_next_c:cmul(f)
     end
-    grad_h0:copy(grad_next_h)
-    grad_c0:copy(grad_next_c)
+
+    self.gradHiddenInput:resize(N, H):copy(grad_next_h)
+    self.gradCellInput:resize(N, H):copy(grad_next_c)
     return self.gradInput
 end
 
@@ -293,12 +318,15 @@ function layer:clearState()
     self.grad_a_buffer:set()
     self.cellOutput:set()
     self.hiddenOutput:set()
+    self.hiddenInput:set()
+    self.cellInput:set()
     self.gradCellInput:set()
     self.gradHiddenInput:set()
+    self.gradCellOutput:set()
+    self.gradHiddenOutput:set()
     self.gradInput:set()
     self.output:set()
 end
-
 
 function layer:updateGradInput(input, gradOutput)
     if self.recompute_backward then
