@@ -7,6 +7,7 @@ function BeamSearch:__init(opt)
     self.K = opt.beamSize or 10
     self.Nw = opt.Nw or self.K * self.K
     self.reverseInput = opt.reverseInput or true
+    self.normLength = opt.normLength or 0 -- 1 if we normalized scores by length
 
     self.bosidx = self.vocab[2].word2idx['<s>']
     self.eosidx = self.vocab[2].word2idx['</s>']
@@ -100,7 +101,12 @@ function BeamSearch:run(x, maxLength)
             -- add to nbest
             for i = 1, nx do
                 local text = decodeString(completedHyps[i], self.vocab[2].idx2word, self._ignore)
-                local s = xscores[i] / t -- normalized
+
+                local s = xscores[i]
+                if self.normLength == 1 then
+                    s = s / t
+                end
+
                 table.insert(nbestCands, text)
                 table.insert(nbestScores, s)
             end

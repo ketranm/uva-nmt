@@ -55,11 +55,11 @@ function train()
 
             local x, prev_y, next_y = prepro(loader:next())
 
-            nll = nll + model:forward({x, prev_y}, next_y)
-            model:backward({x, prev_y}, next_y)
-            model:update(opt.learningRate)
+            --nll = nll + model:forward({x, prev_y}, next_y)
+            --model:backward({x, prev_y}, next_y)
+            --model:update(opt.learningRate)
 
-            --nll = nll + model:optimize({x, prev_y}, next_y)
+            nll = nll + model:optimize({x, prev_y}, next_y)
             model:clearState()
             totwords = totwords + prev_y:numel()
             if i % opt.reportEvery == 0 then
@@ -73,7 +73,6 @@ function train()
         end
 
         timer:reset()
-        -- not yet implemented
         loader:valid()
         model:evaluate()
         local valid_nll = 0
@@ -115,7 +114,6 @@ else
     local nbLines = 0
     for line in io.lines(opt.textFile) do
         local translation = bs:run(line, opt.maxLength)
-        --print(translation)
         nbLines = nbLines + 1
         file:write(translation .. '\n')
         file:flush()
