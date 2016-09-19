@@ -193,63 +193,10 @@ function NMT:stepDecoder(x)
     return self.logProb
 end
 
--- REINFORCE training Neural Machine Translation
-function NMT:sample(nsteps, k)
-    --[[ Sample `nsteps` from the model
-    Assume that we already run the encoder and started reading in <s> symbol,
-    so the buffers must contain log probability of the next words
-
-    Parameters:
-    - `nsteps` : integer, number of time steps
-    - `k` : sample from top k
-    Returns:
-    - `output` : 2D tensor of sampled words
-    --]]
-
-    if not self.prob then
-        self.prob = torch.Tensor():typeAs(self.params)
-    end
-
-    local buffers = self.buffers
-    local outputEncoder, prevState = buffers.outputDecoder, buffers.prevState
-    self.decoder:initState(prevState)
-
-    local logProb = buffers.logProb  -- from the previous prediction
-    assert(logProb ~= nil)
-    local batchSize = outputEncoder:size(1)
-    self.output:resize(batchSize, nsteps)
-
-    for i = 1, nsteps do
-        self.prob:resizeAs(logProb)
-        self.prob:copy(logProb)
-        self.prob:exp()
-        if k then
-            local prob_k, idx = self.prob:topk(k, true)
-            prob_k:cdiv(prob_k:sum(2):repeatTensor(1, k)) -- renormalized
-            local sample = torch.multinomial(prob_k, 1)
-            self.output[{{}, {i}}] = idx:gather(2, sample)
-        else
-            self.prob.multinomial(self.output[{{}, {i}}], self.prob, 1)
-        end
-        logProb = self:stepDecoder(self.output[{{},{i}}])
-    end
-
-    return self.output
-end
-
 function NMT:indexStates(index)
     self.encOutput = self.encOutput:index(1, index)
     self.decoder:indexStates(index)
     self.prevStates = self.decoder:lastStates()
-end
-
-function NMT:indexDecoderState(index)
-    self.decoder:indexStates(index)
-end
-
-function NMT:repeatEncoderOutput(K)
-    -- useful for beam search
-    self.encOutput  = self.encOutput:repeatTensor(1, K, 1)
 end
 
 function NMT:clearState()
