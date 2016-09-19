@@ -12,14 +12,14 @@ local NMT, parent = torch.class('nn.NMT', 'nn.Module')
 
 function NMT:__init(opt)
     -- build encoder
-    local srcVocabSize = opt.srcVocabSize
+    local sourceSize = opt.sourceSize
     local inputSize = opt.embeddingSize
     local hiddenSize = opt.hiddenSize
-    self.encoder = nn.Transducer(srcVocabSize, inputSize, hiddenSize, opt.numLayers, opt.dropout)
+    self.encoder = nn.Transducer(sourceSize, inputSize, hiddenSize, opt.numLayers, opt.dropout)
 
     -- build decoder
-    local trgVocabSize = opt.trgVocabSize
-    self.decoder = nn.Transducer(trgVocabSize, inputSize, hiddenSize, opt.numLayers, opt.dropout)
+    local targetSize = opt.targetSize
+    self.decoder = nn.Transducer(targetSize, inputSize, hiddenSize, opt.numLayers, opt.dropout)
 
     -- attention
     self.glimpse = nn.GlimpseDot(hiddenSize)
@@ -29,10 +29,10 @@ function NMT:__init(opt)
     self.layer:add(nn.View(-1, 2 * hiddenSize))
     self.layer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
     self.layer:add(nn.Tanh())
-    self.layer:add(nn.Linear(hiddenSize, trgVocabSize, true))
+    self.layer:add(nn.Linear(hiddenSize, targetSize, true))
     self.layer:add(nn.LogSoftMax())
 
-    local weights = torch.ones(trgVocabSize)
+    local weights = torch.ones(targetSize)
     weights[opt.padIdx] = 0
 
     self.sizeAverage = true
@@ -57,8 +57,6 @@ function NMT:__init(opt)
     -- for optim
     self.optimConfig = {}
     self.optimStates = {}
-    -- use buffer to store all the information needed for forward/backward
-    self.buffers = {}
 end
 
 function NMT:forward(input, target)
@@ -80,32 +78,20 @@ function NMT:forward(input, target)
     self.numSamples = self.tot:sum()
     local nll = self.criterion:forward(logProb, target)
     return nll / self.numSamples
-
 end
 
-function NMT:backward(input, target, gradOutput)
+function NMT:backward(input, target)
     -- zero grad manually here
     self.gradParams:zero()
+    local gradXent = self.criterion:backward(self.logProb, target:view(-1))
+    local scale = 1 / (self.sizeAverage and self.numSamples or 1)
+    gradXent:mul(scale)
 
-    local buffers = self.buffers
-    local outputEncoder = buffers.outputEncoder
-    local outputDecoder = buffers.outputDecoder
-    local context = buffers.context
-    local logProb = buffers.logProb
+    local gradLayer = self.layer:backward({self.cntx, self.decOutput}, gradXent)
 
-    -- all good. Ready to back-prop
-    local gradLoss = gradOutput
-    -- by default, we use Cross-Entropy loss
-    if not gradLoss then
-        gradLoss = self.criterion:backward(logProb, target:view(-1))
-        local scale = 1 / (self.sizeAverage and self.numSamples or 1)
-        gradLoss:mul(scale)
-    end
-
-    local gradLayer = self.layer:backward({context, outputDecoder}, gradLoss)
     local gradDecoder = gradLayer[2] -- grad to decoder
     local gradGlimpse =
-        self.glimpse:backward({outputEncoder, outputDecoder}, gradLayer[1])
+        self.glimpse:backward({self.encOutput, self.decOutput}, gradLayer[1])
 
     gradDecoder:add(gradGlimpse[2]) -- accumulate gradient in-place
 
@@ -172,13 +158,12 @@ end
 -- useful interface for beam search
 function NMT:stepEncoder(x)
     --[[ Encode the source sequence
-    All the information produced by the encoder is stored in buffers
     Parameters:
     - `x` : source tensor, can be a matrix (batch)
     --]]
-    local outputEncoder = self.encoder:forward(x)
-    local prevState = self.encoder:lastStates()
-    self.buffers = {outputEncoder = outputEncoder, prevState = prevState}
+    self.encOutput = self.encoder:forward(x)
+    self.prevStates = self.encoder:lastStates()
+    return self.encOutput
 end
 
 function NMT:stepDecoder(x)
@@ -193,23 +178,14 @@ function NMT:stepDecoder(x)
     Return:
     - `logProb` : cross entropy loss of the sequence
     --]]
+    self.decoder:setStates(self.prevStates)
+    self.decOutput = self.decoder:forward(x)
+    self.cntx = self.glimpse:forward{self.encOutput, self.decOutput}
+    self.logProb = self.layer:forward{self.cntx, self.decOutput}
 
-    -- get out necessary information from the buffers
-    local buffers = self.buffers
-    local outputEncoder, prevState = buffers.outputEncoder, buffers.prevState
-    --
-    self.decoder:setStates(buffers.prevState)
-    local outputDecoder = self.decoder:forward(x)
-    local context = self.glimpse:forward({outputEncoder, outputDecoder})
-    local logProb = self.layer:forward({context, outputDecoder})
-
-    -- update buffer, adding information needed for backward pass
-    buffers.outputDecoder = outputDecoder
-    buffers.prevState = self.decoder:lastStates()
-    buffers.context = context
-    buffers.logProb = logProb
-
-    return logProb
+    -- update prevStates
+    self.prevStates = self.decoder:lastStates()
+    return self.logProb
 end
 
 -- REINFORCE training Neural Machine Translation
