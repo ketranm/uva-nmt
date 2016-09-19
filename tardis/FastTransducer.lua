@@ -63,17 +63,12 @@ function Transducer:setGradStates(gradStates)
     self._rnn.gradHiddenOutput:resizeAs(grad_h):copy(grad_h)
 end
 
-function Transducer:indexStates(index)
+function Transducer:indexStates(idx)
     self._rnn.rememberStates = true
-    local c_out = self._rnn.cellOutput
-    local h_out = self._rnn.hiddenOutput
-    local c_inp = self._rnn.cellInput
-    local h_inp = self._rnn.hiddenInput
-
-    c_out = c_out:index(2, index)
-    h_out = h_out:index(2, index)
-    c_inp = c_inp:index(2, index)
-    h_inp = h_inp:index(2, index)
+    self._rnn.cellOutput = self._rnn.cellOutput:index(2, idx)
+    self._rnn.hiddenOutput = self._rnn.hiddenOutput:index(2, idx)
+    self._rnn.cellInput = self._rnn.cellInput:index(2, idx)
+    self._rnn.hiddenInput = self._rnn.hiddenInput:index(2, idx)
 end
 
 function Transducer:updateGradInput(input, gradOutput)
