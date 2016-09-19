@@ -5,9 +5,7 @@ require 'cutorch'
 require 'cunn'
 
 require 'data.loadBitex'
---require 'tardis.BiNMT' -- for the love of speed
 require 'tardis.SeqAtt' -- for the love of speed
---require 'tardis.NMTA' -- for the love of speed
 require 'tardis.BeamSearch'
 
 
@@ -50,9 +48,9 @@ function train()
         model:training()
         local nll = 0
         local nbatches = loader.nbatches
-        --print('number of batches: ', nbatches)
+        timer:reset()
+        print('learningRate: ', opt.learningRate)
         for i = 1, nbatches do
-
             local x, prev_y, next_y = prepro(loader:next())
 
             --nll = nll + model:forward({x, prev_y}, next_y)
@@ -63,8 +61,10 @@ function train()
             model:clearState()
             totwords = totwords + prev_y:numel()
             if i % opt.reportEvery == 0 then
-                print(string.format('epoch %d\t train ppl = %.4f speed = %.4f word/sec', epoch, exp(nll/i),  totwords / timer:time().real))
-                xlua.progress(i, nbatches)
+                local floatEpoch = (i / nbatches) + epoch - 1
+                local msg = 'Epoch %.2f / %d \t perplexity %.4f %.3f words/sec'
+                local args = {msg, floatEpoch, maxEpoch, exp(nll/i), totwords / timer:time().real}
+                print(string.format(unpack(args)))
                 collectgarbage()
             end
         end
@@ -72,38 +72,36 @@ function train()
             opt.learningRate = opt.learningRate * 0.5
         end
 
-        timer:reset()
         loader:valid()
         model:evaluate()
-        local valid_nll = 0
+        local nll = 0 -- validation loss
         local nbatches = loader.nbatches
         for i = 1, nbatches do
             local x, prev_y, next_y = prepro(loader:next())
-            valid_nll = valid_nll + model:forward({x, prev_y}, next_y:view(-1))
+            nll = nll + model:forward({x, prev_y}, next_y:view(-1))
             if i % 50 == 0 then collectgarbage() end
         end
 
-        prev_valid_nll = valid_nll
         print(string.format('epoch %d\t valid perplexity = %.4f', epoch, exp(valid_nll/nbatches)))
-        local checkpoint = string.format("%s/tardis_epoch_%d_%.4f.t7", opt.modelDir, epoch, valid_nll/nbatches)
-        paths.mkdir(paths.dirname(checkpoint))
-        print('save model to: ' .. checkpoint)
-        --print('learningRate: ', opt.learningRate)
-        model:save(checkpoint)
+        local modelFile = string.format("%s/tardis_%d_%.4f.t7", opt.modelDir, epoch, nll/nbatches)
+        paths.mkdir(paths.dirname(modelFile))
+        model:save(modelFile)
 
+        local msg = '\nvalidation\nEpoch %d valid ppl %.4f\nsaved model %s'
+        local args = {msg, epoch, exp(nll/nbatches), modelFile}
+        print(string.format(unpack(args)))
     end
 end
 
 local eval = opt.modelFile and opt.textFile
 
 if not eval then
-    -- training mode
     train()
 else
     opt.transFile =  opt.transFile or 'translation.txt'
 
     local startTime = timer:time().real
-    print('loading model...')
+    print(string.format('Loading model: %s', opt.modelFile)
     model:load(opt.modelFile)
     local file = io.open(opt.transFile, 'w')
     -- create beam search object
@@ -111,12 +109,14 @@ else
     local bs = BeamSearch(opt)
     bs:use(model)
     local refLine
-    local nbLines = 0
+    local nlines = 0
     for line in io.lines(opt.textFile) do
         local translation = bs:run(line, opt.maxLength)
-        nbLines = nbLines + 1
+        nlines = nlines + 1
         file:write(translation .. '\n')
         file:flush()
+        io.write(string.format('translated sentence %d\r', nlines))
+        io.flush()
     end
     file:close()
 end
