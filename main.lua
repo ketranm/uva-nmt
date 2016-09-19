@@ -62,8 +62,9 @@ function train()
             totwords = totwords + prev_y:numel()
             if i % opt.reportEvery == 0 then
                 local floatEpoch = (i / nbatches) + epoch - 1
-                local msg = 'Epoch %.2f / %d \t perplexity %.4f %.3f words/sec'
-                local args = {msg, floatEpoch, maxEpoch, exp(nll/i), totwords / timer:time().real}
+                local msg = 'epoch %.4f / %d   [ppl] %.4f   [speed] %.2f w/s'
+                local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i), totwords / timer:time().real}
+                --print(args)
                 print(string.format(unpack(args)))
                 collectgarbage()
             end
@@ -82,7 +83,6 @@ function train()
             if i % 50 == 0 then collectgarbage() end
         end
 
-        print(string.format('epoch %d\t valid perplexity = %.4f', epoch, exp(valid_nll/nbatches)))
         local modelFile = string.format("%s/tardis_%d_%.4f.t7", opt.modelDir, epoch, nll/nbatches)
         paths.mkdir(paths.dirname(modelFile))
         model:save(modelFile)
@@ -101,7 +101,7 @@ else
     opt.transFile =  opt.transFile or 'translation.txt'
 
     local startTime = timer:time().real
-    print(string.format('Loading model: %s', opt.modelFile)
+    print(string.format('Loading model: %s', opt.modelFile))
     model:load(opt.modelFile)
     local file = io.open(opt.transFile, 'w')
     -- create beam search object

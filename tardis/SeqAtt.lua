@@ -2,7 +2,8 @@
 
 require 'tardis.GlimpseDot'
 require 'optim'
-require 'tardis.Transducer'
+--require 'tardis.Transducer'
+require 'tardis.FastTransducer'
 local model_utils = require 'tardis.model_utils'
 
 local utils = require 'misc.utils'
