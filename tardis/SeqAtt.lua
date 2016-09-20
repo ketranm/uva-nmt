@@ -22,7 +22,7 @@ function NMT:__init(opt)
     self.decoder = nn.Transducer(targetSize, inputSize, hiddenSize, opt.numLayers, opt.dropout)
 
     -- attention
-    self.glimpse = nn.GlimpseDot(hiddenSize)
+    self.glimpse = nn.GlimpseDot()
 
     self.layer = nn.Sequential()
     self.layer:add(nn.JoinTable(3))

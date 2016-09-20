@@ -2,11 +2,10 @@ local GlimpseDot, parent = torch.class('nn.GlimpseDot', 'nn.Module')
 
 
 function GlimpseDot:__init()
-    --parent.__init(self)
     self.gradInput = {torch.Tensor(), torch.Tensor()}
     -- buffer
-    self.att_buffer = torch.Tensor()
-    self.deriv_buffer = torch.Tensor() -- buffer derivative
+    self.buffer_attn = torch.Tensor() -- buffer for attention
+    self.buffer_derv = torch.Tensor() -- buffer derivative
     -- helper
     self.softmax = nn.SoftMax()
     self.output = torch.Tensor()
@@ -24,11 +23,8 @@ function GlimpseDot:updateOutput(input)
     -- xt: (N, D, Tx)
     self.xt = x:transpose(2,3)
     -- buffer_a: (N, Ty, Tx)
-    self.att_buffer:resize(N, Ty, Tx):bmm(y, self.xt)
-    -- 2D view
-    local buffer_att = self.att_buffer:view(N * Ty, Tx)
-    self.att = self.softmax(buffer_att)
-
+    self.buffer_attn:resize(N, Ty, Tx):bmm(y, self.xt)
+    self.att = self.softmax(self.buffer_attn:view(-1, Tx))
     self.att = self.att:view(N, Ty, Tx)
     self.output:resizeAs(y):bmm(self.att, x)
     return self.output
@@ -40,15 +36,14 @@ function GlimpseDot:backward(input, gradOutput, scale)
     local N, Tx, Ty = x:size(1), x:size(2), y:size(2)
 
     local att = self.att:transpose(2,3) -- (N, Tx, Ty)
-    local dx, dy, dz = self.gradInput[1], self.gradInput[2], self.deriv_buffer
+    local dx, dy, dz = self.gradInput[1], self.gradInput[2], self.buffer_derv
     -- dx: (N, Tx, D)
     dx:resizeAs(x):bmm(att, gradOutput)
     -- derivative of att
     dz:resize(N, Ty, Tx):bmm(gradOutput, self.xt)
 
     -- (N * Ty, D)
-    local buffer_ax = self.att_buffer
-    local deriv_a = self.softmax:backward(buffer_ax, dz:view(N * Ty, Tx))
+    local deriv_a = self.softmax:backward(self.buffer_attn:view(-1, Tx), dz:view(-1, Tx))
     deriv_a = deriv_a:view(N, Ty, Tx)
 
     dx:baddbmm(deriv_a:transpose(2,3), y)
@@ -70,7 +65,7 @@ function GlimpseDot:getAttention()
 end
 
 function GlimpseDot:clearState()
-    self.att_buffer:set()
-    self.deriv_buffer:set()
-    --return parent.clearState(self)
+    self.buffer_attn:set()
+    self.buffer_derv:set()
+    self.xt:set()
 end
