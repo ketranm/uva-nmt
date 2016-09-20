@@ -6,6 +6,7 @@ require 'cunn'
 
 require 'data.loadBitex'
 require 'tardis.SeqAtt' -- for the love of speed
+--require 'tardis.BNMT' -- for the love of speed
 require 'tardis.BeamSearch'
 
 
@@ -53,18 +54,17 @@ function train()
         for i = 1, nbatches do
             local x, prev_y, next_y = prepro(loader:next())
 
-            --nll = nll + model:forward({x, prev_y}, next_y)
-            --model:backward({x, prev_y}, next_y)
-            --model:update(opt.learningRate)
+            nll = nll + model:forward({x, prev_y}, next_y)
+            model:backward({x, prev_y}, next_y)
+            model:update(opt.learningRate)
 
-            nll = nll + model:optimize({x, prev_y}, next_y)
+            --nll = nll + model:optimize({x, prev_y}, next_y)
             model:clearState()
             totwords = totwords + prev_y:numel()
             if i % opt.reportEvery == 0 then
                 local floatEpoch = (i / nbatches) + epoch - 1
                 local msg = 'epoch %.4f / %d   [ppl] %.4f   [speed] %.2f w/s'
                 local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i), totwords / timer:time().real}
-                --print(args)
                 print(string.format(unpack(args)))
                 collectgarbage()
             end
