@@ -267,6 +267,8 @@ function layer:backward(input, gradOutput, scale)
 
         grad_ah:cmul(r)
         grad_Wh1:addmm(scale, prev_h:t(), grad_a)
+        grad_next_h:mm(grad_a, Wh1:t())
+        -- TODO: gradBias and grad mem
         -- now need grad go back to prev_h
     end
 
