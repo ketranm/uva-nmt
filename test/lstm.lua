@@ -178,10 +178,11 @@ function tests.carrystate()
     lstm:resetStates()
     local x = torch.randn(N, T, D)
     local dout = torch.randn(N, T, H)
-    --lstm:forward(x)
-    --lstm:backward(x, dout)
-    --tester:assertTensorEq(lstm.cellInput, torch.zeros(N, H), 0)
-    --tester:assertTensorEq(lstm.hiddenInput, torch.zeros(N, H), 0)
+    lstm.rememberStates = false
+    lstm:forward(x)
+    lstm:backward(x, dout)
+    tester:assertTensorEq(lstm.cellInput, torch.zeros(N, H), 0)
+    tester:assertTensorEq(lstm.hiddenInput, torch.zeros(N, H), 0)
 end
 
 tester:add(tests)
