@@ -23,7 +23,7 @@ function layer:__init(inputSize, hiddenSize)
     self.grad_cntx = torch.Tensor()
     self.grad_prime_h = torch.Tensor()
     self.grad_a_buffer = torch.Tensor()
-    self.gradInput = torch.Tensor()
+    self.gradInput = {torch.Tensor(), torch.Tensor()}
 
     self.h0 = torch.Tensor()
     self.remember_states = false
@@ -45,74 +45,14 @@ function layer:resetStates()
     self.h0 = self.h0.new()
 end
 
-
-function layer:lastStates()
-    local prev_T = self.output:size(2)
-    return {self.output[{{}, prev_T}]}
-end
-
-
-function layer:setStates(state)
-    local h0 = state[1]
-    self.h0:resizeAs(h0):copy(h0)
-    self._set_state = true
-end
-
-
-local function check_dims(x, dims)
-    assert(x:dim() == #dims)
-    for i, d in ipairs(dims) do
-        assert(x:size(i) == d)
-    end
-end
-
-
-function layer:_unpack_input(input)
-    local h0, x = nil, nil
-    if torch.type(input) == 'table' and #input == 2 then
-        h0, x = unpack(input)
-    elseif torch.isTensor(input) then
-        x = input
-    else
-        assert(false, 'invalid input')
-    end
-    return h0, x
-end
-
-
-function layer:_get_sizes(input, gradOutput)
-    local h0, x = self:_unpack_input(input)
-    local N, T = x:size(1), x:size(2)
-    local H, D = self.hiddenSize, self.inputSize
-    check_dims(x, {N, T, D})
-    if h0 then
-        check_dims(h0, {N, H})
-    end
-    if gradOutput then
-        check_dims(gradOutput, {N, T, H})
-    end
-  return N, T, D, H
-end
-
-
-function layer:setGrad(grad0)
-    self._set_grad = true
-    self.grad_h0 = grad0[1]
-end
-
-
-function layer:getGrad()
-    return {self.grad_h0}
-end
-
 function layer:updateOutput(input)
     local x, _m = unpack(input)
-    local Tm = _m:size(2)
+    local M = _m:size(2)
     local h0 = self.h0
     local N, T = x:size(1), x:size(2)
     local D = self.inputSize
     local H = self.hiddenSize
-    self.mem = _m:transpose(2, 3) -- will be (N, H, Tm)
+    self.mem = _m:transpose(2, 3) -- will be (N, H, M)
     self._return_grad_h0 = (h0 ~= nil)
 
     if h0:nElement() == 0 or not self._set_state then
@@ -141,8 +81,8 @@ function layer:updateOutput(input)
     self.gates[{{1, N}}]:add(bias_expand:narrow(3, 1, 3 * H))
     self.gates[{{N + 1, 2 * N}}]:add(bias_expand:narrow(3, 3 * H + 1, 3 * H))
 
-    self.attn_buffer:resize(N, T, Tm)
-    self.attn_probs:resize(N, T, Tm)
+    self.attn_buffer:resize(N, T, M)
+    self.attn_probs:resize(N, T, M)
     self.context:resize(N, T, H)
     for t = 1, T do
         -- compute the first recurrent cell
@@ -164,12 +104,12 @@ function layer:updateOutput(input)
         prime_h:addcmul(hc, -1, z, hc)
         prime_h:addcmul(z, prev_h)
 
-        local attn_scores = self.attn_buffer[{{}, {t}}]
-        attn_scores:bmm(self.buffer_h[{{}, {t}}], self.mem)
-        local attn_score2d = self.attn_buffer[{{}, t}]
+        local attn_input = self.attn_buffer[{{}, {t}}]
+        attn_input:bmm(self.buffer_h[{{}, {t}}], self.mem)
+        local attn_input = self.attn_buffer[{{}, t}]
 
-        attn_score2d.THNN.SoftMax_updateOutput(
-            attn_score2d:cdata(),
+        attn_input.THNN.SoftMax_updateOutput(
+            attn_input:cdata(),
             self.pattn:cdata()
         )
         self.attn_probs[{{}, t}]:copy(self.pattn)
@@ -202,9 +142,16 @@ end
 
 function layer:backward(input, gradOutput, scale)
     scale = scale or 1.0
-    local h0 = self.h0
     local x, _m = unpack(input)
-    local grad_h0, grad_x = self.grad_h0, self.gradInput
+    local M = _m:size(2)
+    -- nicely alias
+    local N, T = x:size(1), x:size(2)
+    local D = self.inputSize
+    local H = self.hiddenSize
+    local h0 = self.h0
+
+    local grad_h0 = self.grad_h0
+    local grad_x, grad_m = self.gradInput[1], self.gradInput[2]
     local h = self.output
     local grad_h = gradOutput
 
@@ -233,12 +180,7 @@ function layer:backward(input, gradOutput, scale)
         local next_h = h[{{}, t}]
         local cur_buffer = self.buffer[{{N + 1, 2 * N}, t}]
         local cur_gates = self.gates[{{N + 1, 2 * N}, t}]
-        local prev_h = nil
-        if t == 1 then
-            prev_h = h0
-        else
-            prev_h = h[{{}, t - 1}]
-        end
+
 
         grad_next_h:add(grad_h[{{}, t}])
 
@@ -246,7 +188,6 @@ function layer:backward(input, gradOutput, scale)
         local z = cur_gates[{{}, {H + 1, 2 * H}}]
         local r = cur_gates[{{}, {2 * H + 1, 3 * H}}]
 
-        -- fill with 1 for convenience
         local grad_a = self.grad_a_buffer:resize(N, 3 * H):zero()
         local grad_az = grad_a[{{}, {H + 1, 2 * H}}]
         local grad_ar = grad_a[{{}, {2 * H + 1, 3 * H}}]
@@ -266,23 +207,67 @@ function layer:backward(input, gradOutput, scale)
         local cur_x = self.context[{{}, t}]
         grad_Wx2:addmm(scale, cur_x:t(), grad_a)
         -- grad to context is easy
-        local grad_cntx = self.grad_cntx
-        local grad_ph = self.grad_prime_h
-        grad_cntx:mm(grad_a, Wx2:t())
-        -- ok
+        self.grad_cntx:resize(N, H):mm(grad_a, Wx2:t())
         grad_ah:cmul(r)
         grad_Wh2:addmm(scale, prime_h:t(), grad_a)
-        -- now compute grad to context and prime_h
-        grad_ph:mm(grad_a, Wh2:t())
-        grad_ph:addcmul(grad_ah, z)
+        self.grad_prime_h:resize(N, H):mm(grad_a, Wh2:t()):addcmul(grad_ah, z)
+        -- ok, we do not need grad_a now
+        -- maybe reuse it?
+        local grad_pattn = self.grad_a_buffer:resize(N, 1, M)
+        grad_pattn:bmm(self.grad_cntx:view(N, 1, H), self.mem)
+        local cur_pattn = self.attn_probs[{{}, t}]
+        local grad_pattn = self.grad_a_buffer[{{}, 1}]
+        self.pattn:copy(cur_pattn)
+
+        local attn_input = self.attn_buffer[{{}, t}]
+        local grad_attn_inp = self.buffer_b
+        attn_input.THNN.SoftMax_updateGradInput(
+            attn_input:cdata(),
+            grad_pattn:cdata(),
+            grad_attn_inp:cdata(),
+            self.pattn:cdata()
+        )
+        -- use grad_h0
+        local da_dh = self.grad_h0:resize(N, 1, H)
+        da_dh:bmm(grad_attn_inp:view(N, 1, M), _m)
+        self.grad_prime_h:add(da_dh)
 
 
-        local grad_attn = torch.Tensor(N, 1, Tm)
-        local attn_probs = self.attn_probs[{{}, {t}}]
-        grad_attn:bmm(grad_cntx:view(N, 1, H), self.mem)
+        local cur_buffer = self.buffer[{{1, N}, t}]
+        local cur_gates = self.gates[{{1, N}, t}]
 
-        -- TODO: passing to softmax and down to the lower layer
-        -- accumulate from reset and update gate
+        local hc = cur_gates[{{}, {1, H}}]
+        local z = cur_gates[{{}, {H + 1, 2 * H}}]
+        local r = cur_gates[{{}, {2 * H + 1, 3 * H}}]
+
+        local grad_a = self.grad_a_buffer:resize(N, 3 * H):zero()
+        local grad_az = grad_a[{{}, {H + 1, 2 * H}}]
+        local grad_ar = grad_a[{{}, {2 * H + 1, 3 * H}}]
+        local grad_ah = grad_a[{{}, {1, H}}]
+
+        local prev_h = nil
+        if t == 1 then
+            prev_h = h0
+        else
+            prev_h = h[{{}, t - 1}]
+        end
+        local grad_next_h = self.grad_prime_h
+
+        grad_ar:add(prev_h, -1, hc):cmul(grad_next_h)
+        grad_az:addcmul(z, -1, z, z):cmul(grad_ar)
+        -- use grad_ar to store grad comes to hc
+        grad_ar:zero():addcmul(grad_next_h, -1, z, grad_next_h)
+        -- derivative of tanh, scale by grad_ar
+        grad_ah:addcmul(-1, hc, hc):cmul(grad_ar)
+        grad_ar:zero():addcmul(r, -1, r, r):cmul(grad_ah):cmul(cur_buffer[{{}, {1, H}}])
+
+        local cur_x = x[{{}, t}]
+        grad_Wx1:addmm(scale, cur_x:t(), grad_a)
+        grad_x[{{}, t}]:mm(grad_a, Wx1:t())
+
+        grad_ah:cmul(r)
+        grad_Wh1:addmm(scale, prev_h:t(), grad_a)
+        -- now need grad go back to prev_h
     end
 
     grad_h0:copy(grad_next_h)
