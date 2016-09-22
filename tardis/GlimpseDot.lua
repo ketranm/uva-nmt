@@ -67,5 +67,4 @@ end
 function GlimpseDot:clearState()
     self.buffer_attn:set()
     self.buffer_derv:set()
-    self.xt:set()
 end

@@ -157,7 +157,7 @@ function DataLoader:text2tensor(textFiles, shardSize, batchSize, tracker)
     local nsents = 0 -- sentence counter
     local buckets = {}
     local diff = 1 -- maximum different in length of the target
-    local prime = 107
+    local prime = 997 -- use a large prime number to avoid hash collision
 
     for source, target in seq.zip(unpack(files)) do
         nsents = nsents + 1
