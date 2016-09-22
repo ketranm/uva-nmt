@@ -70,6 +70,7 @@ function layer:resetStates()
     -- so when the first forward pass is call, all will be zeros
     self.hiddenInput = self.hiddenInput.new()
     self.cellInput = self.cellInput.new()
+    self._initStates = false
 end
 
 function layer:lastStates()
