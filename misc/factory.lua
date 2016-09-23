@@ -20,10 +20,10 @@ function factory.highway(size, num_layers, bias, f)
         output = f(nn.Linear(size, size)(inputs[i]))
         transform_gate = nn.Sigmoid()(nn.AddConstant(bias)(nn.Linear(size, size)(inputs[i])))
         carry_gate = nn.AddConstant(1)(nn.MulConstant(-1)(transform_gate))
-	output = nn.CAddTable()({
-	       nn.CMulTable()({transform_gate, output}),
-	       nn.CMulTable()({carry_gate, inputs[i]})	})
-	table.insert(inputs, output)
+        output = nn.CAddTable()({
+           nn.CMulTable()({transform_gate, output}),
+           nn.CMulTable()({carry_gate, inputs[i]})})
+        table.insert(inputs, output)
     end
     return nn.gModule({input},{output})
 end
@@ -51,7 +51,9 @@ function factory.build_cnn(feature_maps, kernels, charsize, hidsize, nchars, max
     net:add(concat)
     net:add(nn.JoinTable(2))
     net:add(nn.View(-1, featsize))
-    net:add(nn.Linear(featsize, hidsize))
+    local hw = factory.highway(featsize, 2)
+    net:add(hw)
+    --net:add(nn.Linear(featsize, hidsize))
 
     return net
 end

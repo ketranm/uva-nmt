@@ -24,7 +24,7 @@ function GlimpseDot:updateOutput(input)
     self.xt = x:transpose(2,3)
     -- buffer_a: (N, Ty, Tx)
     self.buffer_attn:resize(N, Ty, Tx):bmm(y, self.xt)
-    self.att = self.softmax(self.buffer_attn:view(-1, Tx))
+    self.att = self.softmax:forward(self.buffer_attn:view(-1, Tx))
     self.att = self.att:view(N, Ty, Tx)
     self.output:resizeAs(y):bmm(self.att, x)
     return self.output

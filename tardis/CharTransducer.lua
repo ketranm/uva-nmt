@@ -11,7 +11,8 @@ function CharTransducer:__init(opt)
     local char_cnn = factory.build_cnn(opt.featureMaps, opt.kernels,
                                         opt.charSize, opt.hiddenSize, nchars, maxlen)
 
-    self._rnn = cudnn.LSTM(opt.hiddenSize, opt.hiddenSize, opt.numLayers, true, opt.dropout)
+    local inputSize = torch.Tensor(opt.featureMaps):sum()
+    self._rnn = cudnn.LSTM(inputSize, opt.hiddenSize, opt.numLayers, true, opt.dropout)
     self.net = nn.Sequential()
     self.net:add(char_cnn)
     self.view = nn.View()
@@ -24,7 +25,7 @@ end
 
 function CharTransducer:updateOutput(input)
     local N, T = input:size(1), input:size(2)
-    self.view:resetSize(N, T, self.hiddenSize)
+    self.view:resetSize(N, T, -1)
     self._input:index(self.word2char, 1, input:view(-1))
 
     return self.net:forward(self._input)
