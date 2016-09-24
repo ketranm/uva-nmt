@@ -6,7 +6,6 @@ require 'cunn'
 
 require 'data.loadBitex'
 require 'tardis.SeqAtt' -- for the love of speed
---require 'tardis.BNMT' -- for the love of speed
 require 'tardis.BeamSearch'
 
 
@@ -14,7 +13,6 @@ local timer = torch.Timer()
 torch.manualSeed(42)
 local cfg = require 'pl.config'
 local opt = cfg.read(arg[1])
-
 if not opt.gpuid then opt.gpuid = 0 end
 torch.manualSeed(opt.seed or 42)
 cutorch.setDevice(opt.gpuid + 1)
@@ -43,12 +41,13 @@ end
 
 function train()
     local exp = math.exp
-    local totwords = 0
+    local nupdates = 0
     for epoch = 1, opt.maxEpoch do
         loader:train()
         model:training()
         local nll = 0
         local nbatches = loader.nbatches
+        local totwords = 0
         timer:reset()
         print('learningRate: ', opt.learningRate)
         for i = 1, nbatches do
@@ -57,14 +56,14 @@ function train()
             nll = nll + model:forward({x, prev_y}, next_y)
             model:backward({x, prev_y}, next_y)
             model:update(opt.learningRate)
-
             --nll = nll + model:optimize({x, prev_y}, next_y)
             model:clearState()
+            nupdates = nupdates + 1
             totwords = totwords + prev_y:numel()
             if i % opt.reportEvery == 0 then
                 local floatEpoch = (i / nbatches) + epoch - 1
-                local msg = 'epoch %.4f / %d   [ppl] %.4f   [speed] %.2f w/s'
-                local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i), totwords / timer:time().real}
+                local msg = 'epoch %.4f / %d   [ppl] %.4f   [speed] %.2f w/s [update] %.3f'
+                local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i), totwords / timer:time().real, nupdates/1000}
                 print(string.format(unpack(args)))
                 collectgarbage()
             end
