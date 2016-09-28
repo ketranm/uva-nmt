@@ -17,6 +17,7 @@ function NMT:__init(opt)
     local inputSize = opt.inputSize
     local hiddenSize = opt.hiddenSize
     local k = opt.numNoises  or 50
+
     local unigrams = opt.unigrams
     unigrams:div(unigrams:sum())
 
@@ -40,9 +41,10 @@ function NMT:__init(opt)
 
     self.sizeAverage = true
     self.padIdx = opt.padIdx
-    self.criterion = nn.ClassNLLCriterion(weights, false)
-    self.tot = torch.CudaTensor() -- count non padding symbols
-    self.numSamples = 0
+
+    local weights = torch.ones(targetSize)
+    weights[opt.padIdx] = 0
+    self.criterion = nn.ClassNLLCriterion(weights, true)
 
     -- convert to cuda
     self.encoder:cuda()
@@ -62,12 +64,15 @@ function NMT:__init(opt)
     -- for optim
     self.optimConfig = {}
     self.optimStates = {}
-
-    --self:reset()
+    -- turn this flag on for testing
+    self.normalized = false
+    self.train = false
+    self:reset()
+    self._maskw = torch.CudaTensor()
 end
 
 function NMT:reset()
-    self.params:uniform(-0.1, 0.1)
+    self.params:uniform(-0.01, 0.01)
 end
 
 function NMT:forward(input, target)
@@ -84,24 +89,31 @@ function NMT:forward(input, target)
     self:stepEncoder(input[1])
 
     local htop = self:stepDecoder(input[2])
-    self.logProbs = self.ncem:forward{htop, target}
-    local loss = self.ncec:forward(self.logProbs, target)
-    self.tot:resizeAs(target)
-    self.tot:ne(target, self.padIdx)
-    self.numSamples = self.tot:sum()
+    local nll = 0
+    if self.normalized == false then
+        self.probs = self.ncem:forward{htop, target}
+        nll = self.ncec:forward(self.probs, target)
+    else
+        nll = self.criterion:forward(self.logProb, target)
+    end
     return loss
-    --return loss / self.numSamples
 end
 
 function NMT:backward(input, target)
     -- zero grad manually here
     self.gradParams:zero()
     local target = target:view(-1)
-    local gradNCE = self.ncec:backward(self.logProbs, target)
-    -- TODO: zero mask
+    local gradNCE = self.ncec:backward(self.probs, target)
+    -- zero out gradient to padIdx
+    self._maskw:ne(target, self.padIdx) -- masked padding
+    gradNCE[1]:cmul(self._maskw)
+    gradNCE[3]:cmul(self._maskw)
+    local n, k = gradNCE[2]:size(1), gradNCE:size(2)
+    local maskn = self._maskw:view(-1, 1):expand(n, k)
+    gradNCE[2]:cmul(maskn)
+    gradNCE[4]:cmul(maskn)
+
     local gradhtop = self.ncem:backward({self.htop, target}, gradNCE)
-    --local scale = 1 / (self.sizeAverage and self.numSamples or 1)
-    --gradXent:mul(scale)
 
     local gradLayer = self.layer:backward({self.cntx, self.decOutput}, gradhtop[1])
 
@@ -153,11 +165,19 @@ function NMT:parameters()
 end
 
 function NMT:training()
+    self.train = true
+    self.ncem.train = true
+    self.ncem.normalized = false
     self.encoder:training()
     self.decoder:training()
 end
 
 function NMT:evaluate()
+    self.train = false
+    self.ncem.train = false
+    self.ncem.normalized = true
+    self.ncem.logsoftmax = true
+
     self.encoder:evaluate()
     self.decoder:evaluate()
 end
@@ -198,6 +218,11 @@ function NMT:stepDecoder(x)
     self.decOutput = self.decoder:forward(x)
     self.cntx = self.glimpse:forward{self.encOutput, self.decOutput}
     self.htop = self.layer:forward{self.cntx, self.decOutput}
+
+    if self.normalized then
+        self.logProb = self.ncem:forward(htop)
+    end
+
     --self.logProb = self.layer:forward{self.cntx, self.decOutput}
 
     -- update prevStates
