@@ -46,6 +46,7 @@ function factory.build_cnn(feature_maps, kernels, charsize, hidsize, nchars, max
         inet:add(nn.Tanh())
         inet:add(cudnn.SpatialMaxPooling(1, reduced_l, 1, 1, 0, 0))
         inet:add(nn.Squeeze())
+        --inet:add(nn.Squeeze())
         concat:add(inet)
     end
     net:add(concat)

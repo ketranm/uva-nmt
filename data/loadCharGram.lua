@@ -36,8 +36,7 @@ function DataLoader:__init(opt)
         self.vocab[1] = self:_makeVocab(trainFiles[1], opt.sourceSize)
 
         print('creating word2char mapping for the source!')
-        self.word2chargram, chargram2idx = self:_word2char(self.vocab[1].idx2word)
-        print(self.word2char:size())
+        self.word2chargram, chargram2idx = self:_word2chargram(self.vocab[1].idx2word, 4)
         torch.save(w2cFile, self.word2chargram)
         self.vocab.chargram2idx = chargram2idx
         print('creating target vocabulary ...')
@@ -52,7 +51,7 @@ function DataLoader:__init(opt)
 
         torch.save(indexFile, self.tracker)
     else
-        self.word2char = torch.load(w2cFile)
+        self.word2chargram = torch.load(w2cFile)
         self.vocab = torch.load(vocabFile)
         self.tracker = torch.load(indexFile)
     end
@@ -220,7 +219,7 @@ function DataLoader:text2tensor(textFiles, shardSize, batchSize, tracker)
     end
 end
 
-function DataLoader:_word2chargram(idx2word)
+function DataLoader:_word2chargram(idx2word, order)
     local bow = '<bow>' -- beginning of word
     local eow = '<eow>' -- end of word
 
@@ -246,7 +245,7 @@ function DataLoader:_word2chargram(idx2word)
         end
         table.insert(chars, eow)
         local chargrams = {}
-        for n = 2, order do
+        for n = 3, 4 do
             get_ngrams(chars, n, chargrams)
         end
 
@@ -265,8 +264,8 @@ function DataLoader:_word2chargram(idx2word)
     end
     print('max number of chargrams / word:', maxnc)
     print('number of chargrams = ', #idx2chargram)
-    local word2chargram = torch.ones(#idx2word, maxnc)
-    for i, cgrams in iparis(wid2chargram) do
+    local word2chargram = torch.zeros(#idx2word, maxnc)
+    for i, cgrams in ipairs(wid2chargram) do
         for j = 1, #cgrams do
             word2chargram[i][j] = cgrams[j]
         end

@@ -116,6 +116,7 @@ else
         nlines = nlines + 1
         file:write(translation .. '\n')
         file:flush()
+        print(string.format('%s ||| %s', line, translation))
         io.write(string.format('translated sentence %d\r', nlines))
         io.flush()
     end

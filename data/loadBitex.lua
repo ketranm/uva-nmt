@@ -141,6 +141,7 @@ function DataLoader:_createShard(buckets, batchSize, tracker)
     table.insert(tracker.files, file)
     torch.save(file, shard)
     tracker.nbatches = tracker.nbatches + #shard
+    collectgarbage()
 end
 
 function DataLoader:text2tensor(textFiles, shardSize, batchSize, tracker)
