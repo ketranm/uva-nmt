@@ -17,7 +17,7 @@ function NMT:__init(opt)
     local inputSize = opt.inputSize
     local hiddenSize = opt.hiddenSize
     local k = opt.numNoises  or 50
-    local unigrams = opt.unigrams:cuda()
+    local unigrams = opt.unigrams
     unigrams:div(unigrams:sum())
 
     self.encoder = nn.Transducer(sourceSize, inputSize, hiddenSize, opt.numLayers, opt.dropout)
@@ -33,7 +33,7 @@ function NMT:__init(opt)
     self.layer:add(nn.JoinTable(3))
     self.layer:add(nn.View(-1, 2 * hiddenSize))
     self.layer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
-    self.layer:add(nn.Tanh())
+    self.layer:add(nn.ReLU())
 
     self.ncem = nn.NCEModule(hiddenSize, targetSize, 50, unigrams, 1)
     self.ncec = nn.NCECriterion()
@@ -85,11 +85,12 @@ function NMT:forward(input, target)
 
     local htop = self:stepDecoder(input[2])
     self.logProbs = self.ncem:forward{htop, target}
-    local loss = self.ncec:forward{self.logProbs, target}
+    local loss = self.ncec:forward(self.logProbs, target)
     self.tot:resizeAs(target)
     self.tot:ne(target, self.padIdx)
     self.numSamples = self.tot:sum()
-    return loss / self.numSamples
+    return loss
+    --return loss / self.numSamples
 end
 
 function NMT:backward(input, target)
@@ -102,7 +103,7 @@ function NMT:backward(input, target)
     --local scale = 1 / (self.sizeAverage and self.numSamples or 1)
     --gradXent:mul(scale)
 
-    local gradLayer = self.layer:backward({self.cntx, self.decOutput}, gradhtop)
+    local gradLayer = self.layer:backward({self.cntx, self.decOutput}, gradhtop[1])
 
     local gradDecoder = gradLayer[2] -- grad to decoder
     local gradGlimpse =

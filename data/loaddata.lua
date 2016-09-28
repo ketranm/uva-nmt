@@ -107,22 +107,22 @@ function DataLoader:_makeVocab(textFile, vocabSize)
 
     local word2idx = {}
     local idx2word = {}
-    local unigram = {}
+    local unigrams = {}
     for i, w in ipairs(self._startVocab) do
         table.insert(idx2word, w)
         word2idx[w] = #idx2word
-        table.insert(unigram, 1) -- do not want to generate unk
+        table.insert(unigrams, 1) -- do not want to generate unk
     end
 
     for i = 1, vocabSize - #idx2word do
         local w = words[i]
         table.insert(idx2word, w)
         word2idx[w] = #idx2word
-        table.insert(unigram, wordFreq[w])
+        table.insert(unigrams, wordFreq[w])
     end
     -- free memory
     collectgarbage()
-    return {word2idx = word2idx, idx2word = idx2word, unigram = unigram}
+    return {word2idx = word2idx, idx2word = idx2word, unigrams = unigrams}
 end
 
 function DataLoader:_createShard(buckets, batchSize, tracker)
