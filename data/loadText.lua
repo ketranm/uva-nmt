@@ -35,6 +35,7 @@ function DataLoader:__init(opt)
         self.vocab = torch.load(vocabfile)
         self.tracker = torch.load(indexfile)
     end
+    self.vocabSize = self.vocab.size
 end
 
 function DataLoader:load(tracker)
