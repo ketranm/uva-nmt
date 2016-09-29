@@ -11,12 +11,17 @@ function LM:__init(opt)
     self.net = nn.Sequential()
     self.net:add(nn.LookupTable(V, D, padidx, 1, 2))
     self.net:add(cudnn.GRU(D, H, opt.numLayers, true, opt.dropout))
+    self.net:add(nn.Contiguous())
     self.net:add(nn.View(-1, H))
     self.net:add(nn.Linear(H, V))
     self.net:add(nn.LogSoftMax())
 
     local weights = torch.ones(V)
     weights[opt.padIdx] = 0
+    self.criterion = nn.ClassNLLCriterion(weights, true)
+
+    -- transfer to CUDA
+    self.criterion:cuda()
     self.net:cuda()
     self.params, self.gradParams = self.net:getParameters()
 

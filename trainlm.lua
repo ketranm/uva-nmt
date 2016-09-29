@@ -16,6 +16,8 @@ cmd:option('-hiddenSize', 1024, 'GRU size')
 cmd:option('-numLayers', 3, 'number of layers in stacked GRU')
 cmd:option('-maxNorm', 5, 'max gradient norm')
 cmd:option('-gpuid', 0, 'GPU device')
+cmd:option('-maxEpoch', 100, 'max number of epochs')
+cmd:option('-reportEvery', 50, 'print progress')
 cmd:text()
 opt = cmd:parse(arg or {})
 
@@ -52,12 +54,11 @@ function train()
         local nbatches = loader.nbatches
         local totwords = 0
         timer:reset()
-        print('learningRate: ', opt.learningRate)
         for i = 1, nbatches do
             local x, y = prepro(loader:next())
             nll = nll + model:optimize(x, y)
             nupdates = nupdates + 1
-            totwords = totwords + prev_y:numel()
+            totwords = totwords + y:numel()
             if i % opt.reportEvery == 0 then
                 local floatEpoch = (i / nbatches) + epoch - 1
                 local msg = 'epoch %.4f / %d   [ppl] %.4f   [speed] %.2f w/s [update] %.3f'
