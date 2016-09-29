@@ -34,11 +34,8 @@ function NMT:__init(opt)
     local weights = torch.ones(targetSize)
     weights[opt.padIdx] = 0
 
-    self.sizeAverage = true
     self.padIdx = opt.padIdx
-    self.criterion = nn.ClassNLLCriterion(weights, false)
-    self.tot = torch.CudaTensor() -- count non padding symbols
-    self.numSamples = 0
+    self.criterion = nn.ClassNLLCriterion(weights, true)
 
     -- convert to cuda
     self.encoder:cuda()
@@ -78,19 +75,13 @@ function NMT:forward(input, target)
     self:stepEncoder(input[1])
 
     local logProb = self:stepDecoder(input[2])
-    self.tot:resizeAs(target)
-    self.tot:ne(target, self.padIdx)
-    self.numSamples = self.tot:sum()
-    local nll = self.criterion:forward(logProb, target)
-    return nll / self.numSamples
+    return self.criterion:forward(logProb, target)
 end
 
 function NMT:backward(input, target)
     -- zero grad manually here
     self.gradParams:zero()
     local gradXent = self.criterion:backward(self.logProb, target:view(-1))
-    local scale = 1 / (self.sizeAverage and self.numSamples or 1)
-    gradXent:mul(scale)
 
     local gradLayer = self.layer:backward({self.cntx, self.decOutput}, gradXent)
 
