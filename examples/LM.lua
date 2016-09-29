@@ -10,7 +10,7 @@ function LM:__init(opt)
     local padidx = opt.padIdx
     self.net = nn.Sequential()
     self.net:add(nn.LookupTable(V, D, padidx, 1, 2))
-    self.net:add(cudnn.GRU(D, H, opt.numLayers, true, opt.dropout))
+    self.net:add(cudnn.LSTM(D, H, opt.numLayers, true, opt.dropout, false))
     self.net:add(nn.Contiguous())
     self.net:add(nn.View(-1, H))
     self.net:add(nn.Linear(H, V))
@@ -29,7 +29,7 @@ function LM:__init(opt)
     -- for optim
     self.optimConfig = {}
     self.optimStates = {}
-    self:reset(4e-2)
+    --self:reset(1e-3)
 end
 
 function LM:reset(std)
@@ -37,6 +37,7 @@ function LM:reset(std)
 end
 
 function LM:forward(input, target)
+    self.net:clearState()
     local target = target:view(-1)
     self.logp = self.net:forward(input)
     return self.criterion:forward(self.logp, target)

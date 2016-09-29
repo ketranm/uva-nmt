@@ -20,7 +20,7 @@ cmd:option('-gpuid', 0, 'GPU device')
 cmd:option('-maxEpoch', 100, 'max number of epochs')
 cmd:option('-reportEvery', 50, 'print progress')
 cmd:option('-lr', 1, 'learning rate')
-cmd:option('-vocabSize', 30000, 'shortlist')
+--cmd:option('-cutoff', 0, 'shortlist')
 cmd:text()
 opt = cmd:parse(arg or {})
 
@@ -36,7 +36,7 @@ io:flush()
 local loader = DataLoader(opt)
 opt.padIdx = 1
 opt.vocabSize = loader.vocabSize
-print('check', loader.vocabSize)
+print('vocabulary size', loader.vocabSize)
 
 local model = nn.LM(opt)
 
