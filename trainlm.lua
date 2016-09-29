@@ -13,11 +13,14 @@ cmd:option('-modelDir', '../model', 'location of data')
 cmd:option('-batchSize', 128, 'size of minibatch')
 cmd:option('-inputSize', 1024, 'embedding size')
 cmd:option('-hiddenSize', 1024, 'GRU size')
+cmd:option('-dropout', 0.3 ,'dropout rate!')
 cmd:option('-numLayers', 3, 'number of layers in stacked GRU')
 cmd:option('-maxNorm', 5, 'max gradient norm')
 cmd:option('-gpuid', 0, 'GPU device')
 cmd:option('-maxEpoch', 100, 'max number of epochs')
 cmd:option('-reportEvery', 50, 'print progress')
+cmd:option('-lr', 1, 'learning rate')
+cmd:option('-vocabSize', 30000, 'shortlist')
 cmd:text()
 opt = cmd:parse(arg or {})
 
@@ -33,6 +36,8 @@ io:flush()
 local loader = DataLoader(opt)
 opt.padIdx = 1
 opt.vocabSize = loader.vocabSize
+print('check', loader.vocabSize)
+
 local model = nn.LM(opt)
 
 -- prepare data
@@ -81,8 +86,8 @@ function train()
             end
         end
         --[[
-        if epoch >= opt.decayAfter then
-            opt.learningRate = opt.learningRate * 0.5
+        if nupdates % 5000 == 0 then
+            opt.lr = opt.lr * 0.9
         end]]
 
         local nll = eval()

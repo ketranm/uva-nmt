@@ -48,13 +48,18 @@ function LM:backward(input, target)
     self.net:backward(input, dw)
 end
 
-function LM:update(learningRate)
+function LM:learn(input, target, lr)
+    local f = self:forward(input, target)
+    self.gradParams:zero()
+    self:backward(input, target)
+
     local gradNorm = self.gradParams:norm()
-    local scale = learningRate
+    local scale = lr
     if gradNorm > self.maxNorm then
         scale = scale * self.maxNorm / gradNorm
     end
     self.params:add(self.gradParams:mul(-scale)) -- do it in-place
+    return f
 end
 
 function LM:optimize(input, target)
