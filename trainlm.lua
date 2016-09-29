@@ -44,6 +44,19 @@ function prepro(x)
     return input, target
 end
 
+function eval()
+    loader:valid()
+    model:evaluate()
+    local nll = 0 -- validation loss
+    local nbatches = loader.nbatches
+    for i = 1, nbatches do
+        local x, y = prepro(loader:next())
+        nll = nll + model:forward(x, y)
+        if i % 200 == 0 then collectgarbage() end
+    end
+    return nll / nbatches
+end
+
 function train()
     local exp = math.exp
     local nupdates = 0
@@ -67,28 +80,20 @@ function train()
                 collectgarbage()
             end
         end
+        --[[
         if epoch >= opt.decayAfter then
             opt.learningRate = opt.learningRate * 0.5
-        end
+        end]]
 
-        loader:valid()
-        model:evaluate()
-        local nll = 0 -- validation loss
-        local nbatches = loader.nbatches
-        for i = 1, nbatches do
-            local x, y = prepro(loader:next())
-            nll = nll + model:forward(x, y)
-            if i % 200 == 0 then collectgarbage() end
-        end
-
-        local modelFile = string.format("%s/tardis_%d_%.4f.t7", opt.modelDir, epoch, nll/nbatches)
+        local nll = eval()
+        local modelFile = string.format("%s/tardis_%d_%.4f.t7", opt.modelDir, epoch, nll)
         paths.mkdir(paths.dirname(modelFile))
         model:save(modelFile)
 
         local msg = '\nvalidation\nEpoch %d valid ppl %.4f\nsaved model %s'
-        local args = {msg, epoch, exp(nll/nbatches), modelFile}
+        local args = {msg, epoch, exp(nll), modelFile}
         print(string.format(unpack(args)))
     end
 end
-
+eval()
 train()
