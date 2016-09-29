@@ -52,12 +52,11 @@ function train()
         print('learningRate: ', opt.learningRate)
         for i = 1, nbatches do
             local x, prev_y, next_y = prepro(loader:next())
-
+            model:clearState()
             nll = nll + model:forward({x, prev_y}, next_y)
             model:backward({x, prev_y}, next_y)
             model:update(opt.learningRate)
             --nll = nll + model:optimize({x, prev_y}, next_y)
-            model:clearState()
             nupdates = nupdates + 1
             totwords = totwords + prev_y:numel()
             if i % opt.reportEvery == 0 then
@@ -77,6 +76,7 @@ function train()
         local nll = 0 -- validation loss
         local nbatches = loader.nbatches
         for i = 1, nbatches do
+            model:clearState()
             local x, prev_y, next_y = prepro(loader:next())
             nll = nll + model:forward({x, prev_y}, next_y:view(-1))
             if i % 50 == 0 then collectgarbage() end
