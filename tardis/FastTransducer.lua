@@ -5,7 +5,7 @@ local Transducer, parent = torch.class('nn.Transducer', 'nn.Module')
 function Transducer:__init(vocabSize, inputSize, hiddenSize, numLayers, dropout, rememberStates)
     self._rnn = cudnn.LSTM(inputSize, hiddenSize, numLayers, true, dropout)
     self.net = nn.Sequential()
-    self.net:add(nn.LookupTable(vocabSize, inputSize))
+    self.net:add(nn.LookupTable(vocabSize, inputSize, 0, 1, 2))
     self.net:add(self._rnn)
 end
 

@@ -16,7 +16,7 @@ function NMT:__init(opt)
     local sourceSize = opt.sourceSize
     local inputSize = opt.inputSize
     local hiddenSize = opt.hiddenSize
-    local k = opt.numNoises  or 50
+    local k = opt.numNoise  or 50
 
     local unigrams = opt.unigrams
     unigrams:div(unigrams:sum())
@@ -36,7 +36,7 @@ function NMT:__init(opt)
     self.layer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
     self.layer:add(nn.ReLU())
 
-    self.ncem = nn.NCEModule(hiddenSize, targetSize, 50, unigrams, 1)
+    self.ncem = nn.NCEModule(hiddenSize, targetSize, k, unigrams, 1)
     self.ncec = nn.NCECriterion()
 
     self.sizeAverage = true
@@ -53,6 +53,7 @@ function NMT:__init(opt)
     self.layer:cuda()
     self.ncem:cuda()
     self.ncec:cuda()
+    self.criterion:cuda()
 
     self.params, self.gradParams =
         model_utils.combine_all_parameters(self.encoder,
@@ -66,8 +67,8 @@ function NMT:__init(opt)
     self.optimStates = {}
     -- turn this flag on for testing
     self.normalized = false
-    self.train = false
-    self:reset()
+    self.train = true
+    --self:reset()
     self._maskw = torch.CudaTensor()
 end
 
@@ -90,13 +91,13 @@ function NMT:forward(input, target)
 
     local htop = self:stepDecoder(input[2])
     local nll = 0
-    if self.normalized == false then
+    if self.train == true then
         self.probs = self.ncem:forward{htop, target}
         nll = self.ncec:forward(self.probs, target)
     else
         nll = self.criterion:forward(self.logProb, target)
     end
-    return loss
+    return nll
 end
 
 function NMT:backward(input, target)
@@ -104,11 +105,12 @@ function NMT:backward(input, target)
     self.gradParams:zero()
     local target = target:view(-1)
     local gradNCE = self.ncec:backward(self.probs, target)
+
     -- zero out gradient to padIdx
     self._maskw:ne(target, self.padIdx) -- masked padding
     gradNCE[1]:cmul(self._maskw)
     gradNCE[3]:cmul(self._maskw)
-    local n, k = gradNCE[2]:size(1), gradNCE:size(2)
+    local n, k = gradNCE[2]:size(1), gradNCE[2]:size(2)
     local maskn = self._maskw:view(-1, 1):expand(n, k)
     gradNCE[2]:cmul(maskn)
     gradNCE[4]:cmul(maskn)
@@ -219,11 +221,9 @@ function NMT:stepDecoder(x)
     self.cntx = self.glimpse:forward{self.encOutput, self.decOutput}
     self.htop = self.layer:forward{self.cntx, self.decOutput}
 
-    if self.normalized then
-        self.logProb = self.ncem:forward(htop)
+    if self.train == false then
+        self.logProb = self.ncem:forward({self.htop, torch.CudaTensor({0})})
     end
-
-    --self.logProb = self.layer:forward{self.cntx, self.decOutput}
 
     -- update prevStates
     self.prevStates = self.decoder:lastStates()
