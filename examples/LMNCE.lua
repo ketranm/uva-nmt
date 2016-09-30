@@ -18,8 +18,9 @@ function LM:__init(opt)
     self.net:add(nn.Contiguous())
     self.net:add(nn.View(-1, H))
 
-    self.ncem = nn.NCEModule(H, V, 100, unigrams, 1)
+    self.ncem = nn.NCEModule(H, V, 100, opt.unigrams, 1)
     self.ncec = nn.NCECriterion()
+    self.criterion = nn.ClassNLLCriterion()
 
     -- transfer to CUDA
     self.criterion:cuda()
@@ -47,19 +48,19 @@ function LM:forward(input, target)
     local target = target:view(-1)
     self.h = self.net:forward(input)
     if self.train == true then
-        self.probs = self.ncem:forward(self.h, target)
+        self.probs = self.ncem:forward{self.h, target}
         nll = self.ncec:forward(self.probs, target)
     else
         -- this is used for evaluation only
-        self.logp = self.ncec:forward(self.h, target)
-        nll = self.criterion:forward(self.logp, target)
+        local logp = self.ncem:forward({self.h, target})
+        nll = self.criterion:forward(logp, target)
     end
     return nll
 end
 
 function LM:backward(input, target)
     local gradNCE = self.ncec:backward(self.probs, target:view(-1))
-    local gradh = self.ncem:backward(self.h, gradNCE)
+    local gradh = self.ncem:backward({self.h, target:view(-1)}, gradNCE)
     -- zero grad manually here
     self.net:backward(input, gradh[1])
 end
