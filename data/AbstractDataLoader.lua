@@ -102,24 +102,28 @@ function AbstractDataLoader:makeVocab(textfile)
 
     local word2idx = {}
     local idx2word = {}
-
+    local unigrams = {}
     for i, w in ipairs(self._startvocab) do
         table.insert(idx2word, w)
+        table.insert(unigrams, 1)
         word2idx[w] = #idx2word
     end
 
     for i = 1, vocabSize - #idx2word do
         local w = words[i]
         table.insert(idx2word, w)
+        table.insert(unigrams, wordfreq[w])
         word2idx[w] = #idx2word
     end
+
     -- free memory
     collectgarbage()
     local vocab  = {word2idx = word2idx,
                     idx2word = idx2word,
                     word = function(idx) return idx2word[idx] or '<unk>' end,
                     idx = function(w) return word2idx[w] or 3 end,
-                    size = #idx2word}
+                    size = #idx2word,
+                    unigrams = unigrams}
 
     return vocab
 end
