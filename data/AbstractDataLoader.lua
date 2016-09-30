@@ -1,11 +1,14 @@
 -- Abstract class for Text processing
 local AbstractDataLoader = torch.class('AbstractDataLoader')
 local utf8 = require 'lua-utf8'
+local _ = require 'moses'
 
 function AbstractDataLoader:__init(startvocab)
     self._startvocab = startvocab or {'<pad>', '<s>', '</s>', '<unk>'}
     self._minfreq = 0
     self._maxsize = -1
+    self.dataPath = ''
+    self.tracker = {{name = 'train'}, {name = 'valid'}}
 end
 
 function AbstractDataLoader:cutoff(threshold)
@@ -16,6 +19,41 @@ end
 function AbstractDataLoader:shortlist(n)
     self._maxsize = n
 end
+function AbstractDataLoader:load(tracker)
+    local fnames = {}
+    for i = 1, tracker.fidx do
+        local file = string.format('%s/%s.shard_%d.t7',
+                                    self.dataPath, tracker.name, i)
+        table.insert(fnames, file)
+    end
+    self._tensorfiles = _.shuffle(fnames)
+    self.isize = 0
+    self.nbatches = tracker.size
+end
+
+function AbstractDataLoader:train()
+    self:load(self.tracker[1])
+end
+
+function AbstractDataLoader:valid()
+    self:load(self.tracker[2])
+end
+
+function AbstractDataLoader:next()
+    local idx = 0
+    if self.isize == 0 then
+        local file = table.remove(self._tensorfiles)
+        self.data = torch.load(file)
+        self.isize = #self.data
+        self.permidx = torch.randperm(self.isize)
+        idx = self.permidx[self.isize]
+    else
+        idx = self.permidx[self.isize]
+    end
+    self.isize = self.isize - 1
+    return self.data[idx]
+end
+
 
 function AbstractDataLoader:tensorize()
     err('not yet implemented!')
@@ -119,6 +157,11 @@ function AbstractDataLoader.decodeString(xs, vocab)
     end
     for i = 1, n do table.insert(ws, vocab.word(xs[i])) end
     return table.concat(ws, ' ')
+end
+
+
+function AbstractDataLoader:text2tensor(textfiles, shardSize, batchSize, tracker)
+    error('not yet implemented!')
 end
 
 function AbstractDataLoader:characterize(idx2word, maxlen)
