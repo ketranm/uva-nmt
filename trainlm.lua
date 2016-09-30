@@ -5,6 +5,7 @@ require 'cutorch'
 require 'cunn'
 require 'data.loadText'
 require 'examples.LM'
+require 'xlua'
 
 local cmd = torch.CmdLine()
 cmd:text('GRU Language Model')
@@ -20,7 +21,8 @@ cmd:option('-gpuid', 0, 'GPU device')
 cmd:option('-maxEpoch', 100, 'max number of epochs')
 cmd:option('-reportEvery', 50, 'print progress')
 cmd:option('-lr', 1, 'learning rate')
---cmd:option('-cutoff', 0, 'shortlist')
+cmd:option('-vocabSize', 50000, 'vocab size')
+--cmd:option('-cutoff', 5, 'shortlist')
 cmd:text()
 opt = cmd:parse(arg or {})
 
@@ -75,20 +77,28 @@ function train()
         for i = 1, nbatches do
             local x, y = prepro(loader:next())
             nll = nll + model:optimize(x, y)
+            --nll = nll + model:learn(x, y, opt.lr)
             nupdates = nupdates + 1
             totwords = totwords + y:numel()
             if i % opt.reportEvery == 0 then
+                --xlua.progress(i, nbatches)
                 local floatEpoch = (i / nbatches) + epoch - 1
                 local msg = 'epoch %.4f / %d   [ppl] %.4f   [speed] %.2f w/s [update] %.3f'
                 local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i), totwords / timer:time().real, nupdates/1000}
                 print(string.format(unpack(args)))
                 collectgarbage()
             end
+
+            if nupdates % 3000 == 0 then
+                opt.lr = opt.lr * 0.9
+            end
+            --[[
+            if nupdates % 10000 == 0 then
+                local modelFile = string.format('%s/checkpoint_%d.t7', opt.modelDir, nupdates)
+                paths.mkdir(paths.dirname(modelfile))
+                model:save(modelfile)
+            end]]
         end
-        --[[
-        if nupdates % 5000 == 0 then
-            opt.lr = opt.lr * 0.9
-        end]]
 
         local nll = eval()
         local modelFile = string.format("%s/tardis_%d_%.4f.t7", opt.modelDir, epoch, nll)
@@ -100,5 +110,18 @@ function train()
         print(string.format(unpack(args)))
     end
 end
-eval()
-train()
+
+modelfile = '/var/scratch/mktran/lmtest/tardis_17_4.2338.t7'
+model:load(modelfile)
+
+local s = 'today is a'
+local x = loader.encodeString(s, loader.vocab, 'first', true)
+x = x:view(1, -1):cuda()
+for i = 1, 50 do
+    --model:clearState()
+    out = model:sample(x, 50, 1)
+    local s = loader.decodeString(out:view(-1), loader.vocab)
+    print(s)
+end
+
+--train()

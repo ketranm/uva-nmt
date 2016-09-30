@@ -29,7 +29,6 @@ function LM:__init(opt)
     -- for optim
     self.optimConfig = {}
     self.optimStates = {}
-    --self:reset(1e-3)
 end
 
 function LM:reset(std)
@@ -92,6 +91,30 @@ end
 
 function LM:evaluate()
     self.net:evaluate()
+end
+
+function LM:sample(x, T, temperature)
+    if not self.first then
+        self.net:get(2).rememberState = true
+        self.net:remove()
+        self.first = true
+    end
+    self.net:clearState()
+    local sampled = torch.Tensor(1, T):cuda()
+    local T0 = x:size(2)
+    sampled[{{}, {1, T0}}]:copy(x)
+    -- rolling in
+    self.net:forward(sampled[{{}, {1, T0-1}}])
+    local scores = self.net:forward(sampled[{{}, {T0, T0}}])
+    local first_t = T0 + 1
+    for t = first_t, T do
+        local probs = torch.div(scores, temperature):exp()
+        probs:div(torch.sum(probs))
+        local next_idx = torch.multinomial(probs, 1):view(1, 1)
+        sampled[{{}, {t, t}}]:copy(next_idx)
+        scores = self.net:forward(next_idx)
+    end
+    return sampled
 end
 
 function LM:load(fileName)
