@@ -30,7 +30,7 @@ opt.word2char = loader.word2char
 opt.featureMaps = {50, 100, 150, 200, 200, 200, 200}
 opt.kernels = {1, 2, 3, 4, 5, 6, 7}
 opt.charSize = 15
-local model = nn.NMT(opt)
+local model = nn.CharNMT(opt)
 
 -- prepare data
 function prepro(input)

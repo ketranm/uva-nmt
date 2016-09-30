@@ -1,7 +1,7 @@
-require 'cudnn'
+require 'tardis.FastTransducer'
 local factory = require 'misc.factory'
 
-local CharTransducer, parent = torch.class('nn.CharTransducer', 'nn.Module')
+local CharTransducer, parent = torch.class('nn.CharTransducer', 'nn.Transducer')
 
 function CharTransducer:__init(opt)
     self.word2char = opt.word2char:cuda()
@@ -33,71 +33,4 @@ end
 
 function CharTransducer:backward(input, gradOutput, scale)
     return self.net:backward(self._input, gradOutput, scale)
-end
-
-function CharTransducer:parameters()
-    return self.net:parameters()
-end
-
-function CharTransducer:training()
-    self.net:training()
-    parent.training(self)
-end
-
-function CharTransducer:evaluate()
-    self.net:evaluate()
-    parent.evaluate(self)
-end
-
-function CharTransducer:lastStates()
-    local c = self._rnn.cellOutput
-    local h = self._rnn.hiddenOutput
-    return {c, h}
-end
-
-function CharTransducer:setStates(states)
-    local c, h = unpack(states)
-    if not self._rnn.cellInput then
-        self._rnn.cellInput = c.new()
-        self._rnn.hiddenInput = h.new()
-    end
-    self._rnn.cellInput:resizeAs(c):copy(c)
-    self._rnn.hiddenInput:resizeAs(h):copy(h)
-end
-
-function CharTransducer:gradStates()
-    local grad_c = self._rnn.gradCellInput
-    local grad_h = self._rnn.gradHiddenInput
-    return {grad_c, grad_h}
-end
-
-function CharTransducer:setGradStates(gradStates)
-    local grad_c, grad_h = unpack(gradStates)
-    if not self._rnn.gradCellOutput then
-        self._rnn.gradCellOutput = grad_c.new()
-        self._rnn.gradHiddenOutput = grad_h.new()
-    end
-    self._rnn.gradCellOutput:resizeAs(grad_c):copy(grad_c)
-    self._rnn.gradHiddenOutput:resizeAs(grad_h):copy(grad_h)
-end
-
-function CharTransducer:indexStates(idx)
-    self._rnn.rememberStates = true
-
-    self._rnn.cellOutput    = self._rnn.cellOutput:index(2, idx)
-    self._rnn.hiddenOutput  = self._rnn.hiddenOutput:index(2, idx)
-    self._rnn.cellInput     = self._rnn.cellInput:index(2, idx)
-    self._rnn.hiddenInput   = self._rnn.hiddenInput:index(2, idx)
-end
-
-function CharTransducer:updateGradInput(input, gradOutput)
-    self:backward(input, gradOutput, 0)
-end
-
-function CharTransducer:accGradParameters(input, gradOutput, scale)
-    self:backward(input, gradOutput, scale)
-end
-
-function CharTransducer:clearState()
-    self._rnn:clearState()
 end
