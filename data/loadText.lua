@@ -1,14 +1,13 @@
 require 'data.AbstractDataLoader'
 local DataLoader, parent = torch.class('DataLoader', 'AbstractDataLoader')
-local _ = require 'moses'
 function DataLoader:__init(opt)
     parent.__init(self)
     -- data path
-    self.datapath = opt.datapath
-    local trainfile = path.join(self.datapath, 'train.txt')
-    local validfile = path.join(self.datapath, 'valid.txt')
-    local vocabfile = path.join(self.datapath, 'vocab.t7')
-    local indexfile = path.join(self.datapath, 'index.t7')
+    self.dataPath = opt.dataPath
+    local trainfile = path.join(self.dataPath, 'train.txt')
+    local validfile = path.join(self.dataPath, 'valid.txt')
+    local vocabfile = path.join(self.dataPath, 'vocab.t7')
+    local indexfile = path.join(self.dataPath, 'index.t7')
 
     if opt.vocabSize then
         self:shortlist(opt.vocabSize)
@@ -38,42 +37,6 @@ function DataLoader:__init(opt)
     self.vocabSize = self.vocab.size
 end
 
-function DataLoader:load(tracker)
-    local fnames = {}
-    for i = 1, tracker.fidx do
-        local file = string.format('%s/%s.shard_%d.t7',
-                                    self.datapath, tracker.name, i)
-        table.insert(fnames, file)
-    end
-    self._tensorfiles = _.shuffle(fnames)
-    self.isize = 0
-    self.nbatches = tracker.size
-end
-
-function DataLoader:train()
-    self:load(self.tracker[1])
-end
-
-function DataLoader:valid()
-    self:load(self.tracker[2])
-end
-
-function DataLoader:next()
-    local idx = 0
-    if self.isize == 0 then
-        local file = table.remove(self._tensorfiles)
-        self.data = torch.load(file)
-        self.isize = #self.data
-        self.permidx = torch.randperm(self.isize)
-        idx = self.permidx[self.isize]
-    else
-        idx = self.permidx[self.isize]
-    end
-    self.isize = self.isize - 1
-    return self.data[idx]
-end
-
-
 function DataLoader:saveShard(buckets, batchSize, tracker)
     local shard = {}
     for bx, bucket in pairs(buckets) do
@@ -87,7 +50,7 @@ function DataLoader:saveShard(buckets, batchSize, tracker)
     tracker.fidx = tracker.fidx + 1
 
     local file = string.format('%s/%s.shard_%d.t7',
-                                self.datapath, tracker.name, tracker.fidx)
+                                self.dataPath, tracker.name, tracker.fidx)
     torch.save(file, shard)
     tracker.size = tracker.size or 0 + #shard
     collectgarbage()
