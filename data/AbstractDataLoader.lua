@@ -19,6 +19,7 @@ end
 function AbstractDataLoader:shortlist(n)
     self._maxsize = n
 end
+
 function AbstractDataLoader:load(tracker)
     local fnames = {}
     for i = 1, tracker.fidx do

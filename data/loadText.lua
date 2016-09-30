@@ -1,6 +1,5 @@
 require 'data.AbstractDataLoader'
 local DataLoader, parent = torch.class('DataLoader', 'AbstractDataLoader')
-local _ = require 'moses'
 function DataLoader:__init(opt)
     parent.__init(self)
     -- data path
