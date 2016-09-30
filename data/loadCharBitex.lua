@@ -222,9 +222,10 @@ end
 function DataLoader:_word2char(idx2word, maxlen)
     local bow = '<bow>' -- beginning of word
     local eow = '<eow>' -- end of word
-    local pow = '<pow>'
-    local char2idx  = {[pow] = 1, [bow] = 2, [eow] = 3}
-    idx2char = {pow, bow, eow}
+    --local pow = '<pow>'
+    --local char2idx  = {[pow] = 1, [bow] = 2, [eow] = 3}
+    local char2idx  = {[bow] = 1, [eow] = 2}
+    local idx2char = {bow, eow}
 
     print('create char dictionary!')
     for _, w in ipairs(idx2word) do
@@ -247,11 +248,9 @@ function DataLoader:_word2char(idx2word, maxlen)
     end
 
     local min = math.min
-    local nwords = 0
+    local nwords = #idx2word
 
-    for _, w in ipairs(idx2word) do nwords = nwords + 1 end
-
-    local word2char = torch.ones(nwords, maxlen)
+    local word2char = torch.zeros(nwords, maxlen)
     for i, w in ipairs(idx2word) do
         local chars = w2chars(w)
         local v = word2char[i]

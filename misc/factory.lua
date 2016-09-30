@@ -1,6 +1,7 @@
 -- quickly build char-CNN
 require 'cudnn'
 require 'nngraph'
+require 'tardis.LookupTableMaskZero'
 local factory = {}
 
 function factory.highway(size, num_layers, bias, f)
@@ -32,7 +33,8 @@ function factory.build_cnn(feature_maps, kernels, charsize, hidsize, nchars, max
     local featsize = torch.Tensor(feature_maps):sum()
     local net = nn.Sequential()
     -- pad of char is 1, we need to tell LookupTable
-    net:add(nn.LookupTable(nchars, charsize, 1))
+    net:add(nn.LookupTableMaskZero(nchars, charsize, 1, 2))
+    --net:add(nn.LookupTable(nchars, charsize, 1))
     local concat = nn.ConcatTable()
     for i = 1, #kernels do
         local reduced_l = maxlen - kernels[i] + 1
@@ -46,7 +48,6 @@ function factory.build_cnn(feature_maps, kernels, charsize, hidsize, nchars, max
         inet:add(nn.Tanh())
         inet:add(cudnn.SpatialMaxPooling(1, reduced_l, 1, 1, 0, 0))
         inet:add(nn.Squeeze())
-        --inet:add(nn.Squeeze())
         concat:add(inet)
     end
     net:add(concat)
@@ -54,7 +55,6 @@ function factory.build_cnn(feature_maps, kernels, charsize, hidsize, nchars, max
     net:add(nn.View(-1, featsize))
     local hw = factory.highway(featsize, 2)
     net:add(hw)
-    --net:add(nn.Linear(featsize, hidsize))
 
     return net
 end
