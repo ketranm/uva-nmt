@@ -18,7 +18,7 @@ function LM:__init(opt)
     self.net:add(nn.Contiguous())
     self.net:add(nn.View(-1, H))
 
-    self.ncem = nn.NCEModule(H, V, 100, opt.unigrams, 1)
+    self.ncem = nn.NCEModule(H, V, 400, opt.unigrams, 1)
     self.ncec = nn.NCECriterion()
     self.criterion = nn.ClassNLLCriterion()
 
