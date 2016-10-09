@@ -1,26 +1,26 @@
 require 'data.AbstractDataLoader'
 local DataLoader, parent = torch.class('DataLoader', 'AbstractDataLoader')
-
+local _ = require 'moses'
 function DataLoader:__init(opt)
+    parent.__init(self)
     -- data path
     self.dataPath = opt.dataPath
     self.langs = {opt.source, opt.target}
 
-    local trainPath = path.join(opt.dataPath, 'train')
     local trainfiles = _.map(self.langs, function(i, ext)
-        return path.join(trainPath, ext)
+        return path.join(self.dataPath, string.format('train.%s', ext) )
     end)
-    local validPath = path.join(opt.validPath, 'valid')
+    print('train files', trainfiles)
     local validfiles = _.map(self.langs, function(i, ext)
-        return path.join(validPath, ext))
+        return path.join(self.dataPath, string.format('valid.%s', ext) )
     end)
 
     -- helper
     local vocabfile = path.join(opt.dataPath, 'vocab.t7')
     -- auxiliary file to store additional information about shards
     local indexfile = path.join(opt.dataPath, 'index.t7')
-
-    if not path.exists(vocabFile) then
+    self.vocab = {}
+    if not path.exists(vocabfile) then
         print('creating source vocabulary ...')
         self:shortlist(opt.sourceSize)
         self.vocab[1] = self:makeVocab(trainfiles[1])
@@ -108,6 +108,6 @@ function DataLoader:text2tensor(textfiles, shardSize, batchSize, tracker)
     end
 
     if nsents % shardSize  > 1 then
-        self:_createShard(buckets, batchSize, tracker)
+        self:saveShard(buckets, batchSize, tracker)
     end
 end

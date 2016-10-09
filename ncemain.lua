@@ -4,7 +4,7 @@ require 'nn'
 require 'cutorch'
 require 'cunn'
 
-require 'data.loaddata'
+require 'data.loadBitext'
 require 'tardis.NCENMT' -- for the love of speed
 require 'tardis.BeamSearch'
 
@@ -25,6 +25,8 @@ io:flush()
 local loader = DataLoader(opt)
 opt.padIdx = loader.padIdx
 opt.unigrams = torch.Tensor(loader.vocab[2].unigrams)
+opt.targetSize = #loader.vocab[2].idx2word
+print('target vocab size', opt.targetSize)
 local model = nn.NMT(opt)
 
 -- prepare data
