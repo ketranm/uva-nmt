@@ -169,7 +169,7 @@ function AbstractDataLoader:text2tensor(textfiles, shardSize, batchSize, tracker
     error('not yet implemented!')
 end
 
-function AbstractDataLoader:characterize(idx2word, maxlen)
+function AbstractDataLoader:buildchar(idx2word, maxlen)
     --[[ Map word to a tensor of character idx
     Parameters:
     - `idx2word`: contiguous table (no hole)
@@ -177,42 +177,58 @@ function AbstractDataLoader:characterize(idx2word, maxlen)
     Returns:
     - `word2char`: Tensor
     ]]
-    local bow = '<bow>' -- beginning of word
-    local eow = '<eow>' -- end of word
-    local pow = '<pow>' -- pad of word
-    local char2idx  = {[pow] = 1, [bow] = 2, [eow] = 3}
-    local idx2char = {pow, bow, eow}
+    -- compute max length of words
+    local ll = 0 -- longest length
+    for _, w in ipairs(idx2word) do
+        ll = math.max(ll, utf8.len(w) + 2)
+    end
+    maxlen = math.min(ll, maxlen)
+    print('max word length computed on the corpus: ' .. maxlen)
+    -- special symbols
+    local char2idx  = {['$$'] = 1}  -- padding
+    local idx2char = {'$$'}
 
     print('create char dictionary!')
+
     for _, w in ipairs(idx2word) do
-        for _, char in utf8.next, w do
-            if char2idx[char] == nil then
-                idx2char[#idx2char + 1] = char
-                char2idx[char] = #idx2char
+        for _, c in utf8.next, w do
+            if char2idx[c] == nil then
+                idx2char[#idx2char + 1] = c
+                char2idx[c] = #idx2char
             end
         end
     end
 
-    local function w2chars(word)
-        local chars = {char2idx[bow]}
-        for _, char in utf8.next, word do
-            chars[#chars + 1] = char2idx[char]
-        end
-        chars[#chars + 1] = char2idx[eow]
+    local char = {idx2char = idx2char,
+                  char2idx = char2idx,
+                  padl = #idx2char + 1, padr = #idx2char + 2,
+                  idx = function(c) return char2idx[c] end,
+                  char = function(i) return idx2char[i] end}
 
-        return chars
-    end
+    -- map words to tensor
+    char.numberize = function(word, maxlen)
+                local x = {char.padl}
+                for _, c in utf8.next, word do
+                    x[#x + 1] = char.idx(c)
+                end
+                x[#x + 1] = char.padr
+                local out = torch.IntTensor(maxlen):fill(1)
+                local x = torch.IntTensor(x)
+                if x:numel() < maxlen then
+                    out[{{1, x:numel()}}] = x
+                else
+                    out:copy(x[{{1, maxlen}}])
+                end
+                return out
+            end
 
     local min = math.min
     local nwords = #idx2word
 
     local word2char = torch.ones(nwords, maxlen)
     for i, w in ipairs(idx2word) do
-        local chars = w2chars(w)
-        local v = word2char[i]
-        for j = 1, min(#chars, maxlen) do
-            v[j] = chars[j]
-        end
+        word2char[i] = char.numberize(w, maxlen)
     end
+
     return word2char
 end
