@@ -4,7 +4,7 @@ require 'nn'
 require 'cutorch'
 require 'cunn'
 
-require 'data.loadCharBitex'
+require 'data.loadBitext'
 require 'tardis.CharNMT'
 require 'tardis.BeamSearch'
 
@@ -26,7 +26,7 @@ io:flush()
 local loader = DataLoader(opt)
 opt.padIdx = loader.padIdx
 
-opt.word2char = loader.word2char
+opt.word2char = loader:buildCharSource(15)
 opt.featureMaps = {50, 100, 150, 200, 200, 200, 200}
 opt.kernels = {1, 2, 3, 4, 5, 6, 7}
 opt.charSize = 15
