@@ -206,13 +206,13 @@ function AbstractDataLoader:buildchar(idx2word, maxlen)
                   char = function(i) return idx2char[i] end}
 
     -- map words to tensor
-    char.numberize = function(word, maxlen)
+    char.numberize = function(word, out)
                 local x = {char.padl}
                 for _, c in utf8.next, word do
                     x[#x + 1] = char.idx(c)
                 end
                 x[#x + 1] = char.padr
-                local out = torch.IntTensor(maxlen):fill(1)
+                local maxlen = out:numel()
                 local x = torch.IntTensor(x)
                 if x:numel() < maxlen then
                     out[{{1, x:numel()}}] = x
@@ -227,7 +227,7 @@ function AbstractDataLoader:buildchar(idx2word, maxlen)
     -- we use zero for padding
     local word2char = torch.zeros(nwords, maxlen)
     for i, w in ipairs(idx2word) do
-        word2char[i] = char.numberize(w, maxlen)
+         char.numberize(w, word2char[i])
     end
 
     return word2char
