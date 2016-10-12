@@ -121,7 +121,7 @@ function AbstractDataLoader:makeVocab(textfile)
     local vocab  = {word2idx = word2idx,
                     idx2word = idx2word,
                     word = function(idx) return idx2word[idx] or '<unk>' end,
-                    idx = function(w) return word2idx[w] or 3 end,
+                    idx = function(w) return word2idx[w] or word2idx['<unk>'] end,
                     size = #idx2word,
                     unigrams = unigrams}
 
@@ -144,7 +144,7 @@ function AbstractDataLoader.encodeString(s, vocab, padtype, vectorized)
     if padtype == 'last' or padtype == 'both' then
         table.insert(xs, vocab.idx('</s>'))
     end
-
+    local xs = _.reverse(xs)
     if vectorized then
         return torch.IntTensor(xs)
     else
@@ -185,8 +185,8 @@ function AbstractDataLoader:buildchar(idx2word, maxlen)
     maxlen = math.min(ll, maxlen)
     print('max word length computed on the corpus: ' .. maxlen)
     -- special symbols
-    local char2idx  = {['$$'] = 1}  -- padding
-    local idx2char = {'$$'}
+    local char2idx  = {['padl'] = 1, ['padr'] = 2}  -- padding
+    local idx2char = {'padl', 'padr'}
 
     print('create char dictionary!')
 
@@ -201,7 +201,7 @@ function AbstractDataLoader:buildchar(idx2word, maxlen)
 
     local char = {idx2char = idx2char,
                   char2idx = char2idx,
-                  padl = #idx2char + 1, padr = #idx2char + 2,
+                  padl = 1, padr = 2,
                   idx = function(c) return char2idx[c] end,
                   char = function(i) return idx2char[i] end}
 
@@ -224,8 +224,8 @@ function AbstractDataLoader:buildchar(idx2word, maxlen)
 
     local min = math.min
     local nwords = #idx2word
-
-    local word2char = torch.ones(nwords, maxlen)
+    -- we use zero for padding
+    local word2char = torch.zeros(nwords, maxlen)
     for i, w in ipairs(idx2word) do
         word2char[i] = char.numberize(w, maxlen)
     end

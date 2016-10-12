@@ -45,6 +45,10 @@ function DataLoader:__init(opt)
     assert(self.padIdx == 1)
 end
 
+function DataLoader:buildCharSource(maxlen)
+    return self:buildchar(self.vocab[1].idx2word, maxlen)
+end
+
 function DataLoader:saveShard(buckets, batchSize, tracker)
     local shard = {}
     for bidx, bucket in pairs(buckets) do
