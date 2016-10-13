@@ -4,7 +4,7 @@ local factory = require 'misc.factory'
 local CharTransducer, parent = torch.class('nn.CharTransducer', 'nn.Transducer')
 
 function CharTransducer:__init(opt)
-    self.word2char = opt.word2char:cuda()
+    self.word2char = opt.word2char
     local nchars = self.word2char:max()
     local maxlen = self.word2char:size(2)
 

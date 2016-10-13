@@ -6,11 +6,9 @@ end
 
 function LookupTableMaskZero:updateOutput(input)
     self.weight[1]:zero()
-    if self.__input and (torch.type(self.__input) ~= torch.type(input)) then
-        self.__input = nil -- fixes old casting bug
-    end
     self.__input = self.__input or input.new()
     self.__input:resizeAs(input):add(input, 1)
+
     return parent.updateOutput(self, self.__input)
 end
 
