@@ -130,6 +130,7 @@ end
 
 
 function AbstractDataLoader.encodeString(s, vocab, padtype, vectorized)
+    -- no reverse here
     local ws = stringx.split(s)
     local xs = {}
     local padtype = padtype or 'none'
@@ -144,7 +145,6 @@ function AbstractDataLoader.encodeString(s, vocab, padtype, vectorized)
     if padtype == 'last' or padtype == 'both' then
         table.insert(xs, vocab.idx('</s>'))
     end
-    local xs = _.reverse(xs)
     if vectorized then
         return torch.IntTensor(xs)
     else
