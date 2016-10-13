@@ -35,18 +35,7 @@ function CharNMT:__init(opt)
 
     self.padIdx = opt.padIdx
     self.criterion = nn.ClassNLLCriterion(weights, true)
-    -- convert to cuda
-    self.encoder:cuda()
-    self.decoder:cuda()
-    self.glimpse:cuda()
-    self.layer:cuda()
-    self.criterion:cuda()
 
-    self.params, self.gradParams =
-        model_utils.combine_all_parameters(self.encoder,
-                                           self.decoder,
-                                           self.glimpse,
-                                           self.layer)
     self.maxNorm = opt.maxNorm or 5
     -- for optim
     self.optimConfig = {}

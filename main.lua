@@ -4,7 +4,7 @@ require 'nn'
 require 'cutorch'
 require 'cunn'
 
-require 'data.loadBitex'
+require 'data.loadBitext'
 require 'tardis.SeqAtt' -- for the love of speed
 require 'tardis.BeamSearch'
 
@@ -26,15 +26,15 @@ local loader = DataLoader(opt)
 opt.padIdx = loader.padIdx
 
 local model = nn.NMT(opt)
-
+model:type('torch.CudaTensor')
 -- prepare data
 function prepro(input)
     local x, y = unpack(input)
     local seqlen = y:size(2)
     -- make contiguous and transfer to gpu
-    x = x:contiguous():cuda()
-    prev_y = y:narrow(2, 1, seqlen-1):contiguous():cuda()
-    next_y = y:narrow(2, 2, seqlen-1):contiguous():cuda()
+    x = x:contiguous():cudaLong()
+    prev_y = y:narrow(2, 1, seqlen-1):contiguous():cudaLong()
+    next_y = y:narrow(2, 2, seqlen-1):contiguous():cudaLong()
 
     return x, prev_y, next_y
 end
@@ -56,7 +56,6 @@ function train()
             nll = nll + model:forward({x, prev_y}, next_y)
             model:backward({x, prev_y}, next_y)
             model:update(opt.learningRate)
-            --nll = nll + model:optimize({x, prev_y}, next_y)
             nupdates = nupdates + 1
             totwords = totwords + prev_y:numel()
             if i % opt.reportEvery == 0 then

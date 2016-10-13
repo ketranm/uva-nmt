@@ -25,14 +25,14 @@ function BeamSearch:use(model)
 end
 
 -- helper
-function encodeString(input, word2idx, reverse)
+function encodeString(input, vocab, reverse)
     local xs = stringx.split(input)
     if reverse then
         xs = _.reverse(xs)
     end
     local output = torch.CudaTensor(#xs)
     for i, w in ipairs(xs) do
-        output[i] = word2idx[w] or word2idx['<unk>']
+        output[i] = vocab.idx(w)
     end
     return output:view(1, -1)
 end
@@ -60,14 +60,15 @@ function BeamSearch:run(x, maxLength)
     --self.model:resetStates()
     self.model.decoder.rememberStates = true
     local K, Nw = self.K, self.Nw
-    local x = encodeString(x, self.vocab[1].word2idx, self.reverseInput)
+
+    local x = encodeString(x, self.vocab[1], self.reverseInput)
     -- not that if we do this, the first prediction will be the same
     x = x:repeatTensor(K, 1)
     local srcLength = x:size(2)
     local T = maxLength or utils.round(srcLength * 1.4)
     self.model:stepEncoder(x)
 
-    local hypos = torch.CudaTensor(K, T):fill(self.bosidx)
+    local hypos = torch.CudaLongTensor(K, T):fill(self.bosidx)
     local nbestCands = {}
     local nbestScores = {}
 
@@ -87,16 +88,16 @@ function BeamSearch:run(x, maxLength)
         scores = _scores:view(-1, 1)
         local nr, nc = maxscores:size(1), maxscores:size(2)
         -- TODO: check with CudaLongTensor
-        local rowIdx = flatIdx:long():add(-1):div(nc):add(1):cuda()
+        local rowIdx = flatIdx:long():add(-1):div(nc):add(1):typeAs(hypos)
         local colIdx = indices:view(-1):index(1, flatIdx)
 
-        local xc = colIdx:eq(self.eosidx) -- completed sentence
-        local nx = xc:sum()
+        local xc = colIdx:eq(self.eosidx)--:type('torch.CudaLongTensor') -- completed sentence
+        local nx = xc:sum()--:type('torch.CudaLongTensor')
         if nx > 0 then
             -- found some candidates
             local cands = rowIdx:maskedSelect(xc)
             local completedHyps = hypos:index(1, cands):narrow(2, 1, t)
-            local xscores = scores:index(1, xc):view(-1)
+            local xscores = scores:index(1, xc:type('torch.CudaLongTensor')):view(-1)
 
             -- add to nbest
             for i = 1, nx do
@@ -123,7 +124,7 @@ function BeamSearch:run(x, maxLength)
 
         -- keep survival hypotheses
         hypos = hypos:index(1, rowIdx)
-        hypos[{{}, {t+1}}] = colIdx
+        hypos[{{}, t+1}] = colIdx
         self.model:indexStates(rowIdx)
     end
 
