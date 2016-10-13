@@ -1,6 +1,7 @@
 # UvA-NMT
 University of Amsterdam's Neural Machine Translation
 
+For technical support, go to tardis42.slack.com
 # User Guide
 
 Tardis is mainly developed for NLP, therefore its interfaces have NLPish feel.
@@ -22,8 +23,8 @@ That's all!
 ### Data Processing
 Most of the code for processing data is in `data/`
 
-* [AbstractDataLoader.lua](https://github.com/ketranm/uva-nmt/blob/master/data/AbstractDataLoader.lua) provides general text processing utilities such as creating vocabulary, load and shuffle data, convert text to tensor and vice-visa,...
-* [loadBitext.lua](https://github.com/ketranm/uva-nmt/blob/master/data/loadBitext.lua) inherits from  [AbstractDataLoader.lua](https://github.com/ketranm/uva-nmt/blob/master/data/AbstractDataLoader.lua). It provides general API for bitext processing
+* [AbstractDataLoader](https://github.com/ketranm/uva-nmt/blob/master/data/AbstractDataLoader.lua) provides general text processing utilities such as creating vocabulary, load and shuffle data, convert text to tensor and vice-visa,...
+* [loadBitext](https://github.com/ketranm/uva-nmt/blob/master/data/loadBitext.lua) inherits from  [AbstractDataLoader](https://github.com/ketranm/uva-nmt/blob/master/data/AbstractDataLoader.lua). It provides general API for bitext processing
 * [loadText.lua](https://github.com/ketranm/uva-nmt/blob/master/data/loadText.lua) inherits from AbstractDataLoader. It is useful for Language Model.
 
 ### TARDIS
