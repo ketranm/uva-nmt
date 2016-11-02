@@ -7,8 +7,7 @@ function AbstractDataLoader:__init(startvocab)
     self._startvocab = startvocab or {'<pad>', '<s>', '</s>', '<unk>'}
     self._minfreq = 0
     self._maxsize = -1
-    self.dataPath = ''
-    self.tracker = {{name = 'train'}, {name = 'valid'}}
+    self.tracker = {{name = 'train', size = 0}, {name = 'valid', size = 0}}
 end
 
 function AbstractDataLoader:cutoff(threshold)
@@ -17,6 +16,7 @@ function AbstractDataLoader:cutoff(threshold)
 end
 
 function AbstractDataLoader:shortlist(n)
+    -- use shortlist, keep top n words
     self._maxsize = n
 end
 
@@ -169,6 +169,9 @@ function AbstractDataLoader:text2tensor(textfiles, shardSize, batchSize, tracker
     error('not yet implemented!')
 end
 
+------------------------------------------------------
+-- for Character Model
+------------------------------------------------------
 function AbstractDataLoader:buildchar(idx2word, maxlen)
     --[[ Map word to a tensor of character idx
     Parameters:
