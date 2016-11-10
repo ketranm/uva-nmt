@@ -5,7 +5,7 @@ require 'cutorch'
 require 'cunn'
 
 require 'data.loadBitext'
-require 'tardis.SeqAtt' -- for the love of speed
+require 'tardis.SeqAtt'
 require 'tardis.BeamSearch'
 
 
@@ -50,6 +50,7 @@ function train()
         local totwords = 0
         timer:reset()
         print('learningRate: ', opt.learningRate)
+        print('number of batches', nbatches)
         for i = 1, nbatches do
             local x, prev_y, next_y = prepro(loader:next())
             model:clearState()

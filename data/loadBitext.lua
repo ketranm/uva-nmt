@@ -1,6 +1,8 @@
 require 'data.AbstractDataLoader'
-local DataLoader, parent = torch.class('DataLoader', 'AbstractDataLoader')
 local _ = require 'moses'
+
+local DataLoader, parent = torch.class('DataLoader', 'AbstractDataLoader')
+
 function DataLoader:__init(opt)
     parent.__init(self)
     -- data path
@@ -10,7 +12,6 @@ function DataLoader:__init(opt)
     local trainfiles = _.map(self.langs, function(i, ext)
         return path.join(self.dataPath, string.format('train.%s', ext) )
     end)
-    print('train files', trainfiles)
     local validfiles = _.map(self.langs, function(i, ext)
         return path.join(self.dataPath, string.format('valid.%s', ext) )
     end)
@@ -21,19 +22,19 @@ function DataLoader:__init(opt)
     local indexfile = path.join(opt.dataPath, 'index.t7')
     self.vocab = {}
     if not path.exists(vocabfile) then
-        print('creating source vocabulary ...')
+        print('=> creating source vocabulary ...')
         self:shortlist(opt.sourceSize)
         self.vocab[1] = self.makeVocab(self, trainfiles[1])
 
-        print('creating target vocabulary ...')
+        print('=> creating target vocabulary ...')
         self:shortlist(opt.targetSize)
         self.vocab[2] = self.makeVocab(self, trainfiles[2])
         torch.save(vocabfile, self.vocab)
 
-        print('create training tensor files...')
+        print('=> create training tensor files...')
         self:text2tensor(trainfiles, opt.shardSize, opt.batchSize, self.tracker[1])
 
-        print('create validation tensor files...')
+        print('=> create validation tensor files...')
         self:text2tensor(validfiles, opt.shardSize, opt.batchSize, self.tracker[2])
 
         torch.save(indexfile, self.tracker)
@@ -69,7 +70,7 @@ function DataLoader:saveShard(buckets, batchSize, tracker)
     local file = string.format('%s/%s.shard_%d.t7',
                                 self.dataPath, tracker.name, tracker.fidx)
     torch.save(file, shard)
-    tracker.size = tracker.size or 0 + #shard
+    tracker.size = (tracker.size or 0) + #shard
     collectgarbage()
 end
 

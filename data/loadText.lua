@@ -37,6 +37,11 @@ function DataLoader:__init(opt)
     self.vocabSize = self.vocab.size
 end
 
+
+function DataLoader:word2char(maxlen)
+    return self:buildchar(self.vocab.idx2word, maxlen or 15)
+end
+
 function DataLoader:saveShard(buckets, batchSize, tracker)
     local shard = {}
     for bx, bucket in pairs(buckets) do
