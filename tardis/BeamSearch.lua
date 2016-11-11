@@ -15,7 +15,7 @@ function BeamSearch:__init(opt)
     self.padidx = self.vocab[2].word2idx['<pad>']
 
     self._ignore = {[self.bosidx] = true, [self.eosidx] = true}
-    self.normLength = true --opt.normLength
+    self.normLength = opt.normLength or 1
 end
 
 
@@ -73,6 +73,7 @@ function BeamSearch:run(x, maxLength)
     local nbestScores = {}
 
     local scores = torch.CudaTensor(K, 1):zero()
+    local alpha = self.normLength
     for t = 1, T-1 do
         local curIdx = hypos[{{}, {t}}]
         local logProb = self.model:stepDecoder(curIdx)
@@ -100,14 +101,10 @@ function BeamSearch:run(x, maxLength)
             local xscores = scores:index(1, xc:type('torch.CudaLongTensor')):view(-1)
 
             -- add to nbest
+            xscores:div(t^alpha)
             for i = 1, nx do
                 local text = decodeString(completedHyps[i], self.vocab[2].idx2word, self._ignore)
-
                 local s = xscores[i]
-                if self.normLength == 1 then
-                    s = s / t
-                end
-
                 table.insert(nbestCands, text)
                 table.insert(nbestScores, s)
             end
@@ -131,11 +128,11 @@ function BeamSearch:run(x, maxLength)
     if #nbestCands == 0 then
         assert(K == self.K)
         scores = scores:view(-1)
+        scores:div(T^alpha)
         for i = 1, K do
             local text = decodeString(hypos[i], self.vocab[2].idx2word, self._ignore)
-            local s = scores[i] / T
             table.insert(nbestCands, text)
-            table.insert(nbestScores, s)
+            table.insert(nbestScores, scores[i])
         end
     end
     local _, idx = torch.Tensor(nbestScores):topk(1, true)
