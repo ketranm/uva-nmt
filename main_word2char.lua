@@ -5,7 +5,7 @@ require 'cutorch'
 require 'cunn'
 
 require 'data.loadBitext'
-require 'tardis.SeqAtt'
+require 'tardis.Word2charNMT'
 require 'tardis.BeamSearch'
 
 
@@ -13,6 +13,7 @@ local timer = torch.Timer()
 torch.manualSeed(42)
 local cfg = require 'pl.config'
 local opt = cfg.read(arg[1])
+
 if not opt.gpuid then opt.gpuid = 0 end
 torch.manualSeed(opt.seed or 42)
 cutorch.setDevice(opt.gpuid + 1)
@@ -25,16 +26,20 @@ io:flush()
 local loader = DataLoader(opt)
 opt.padIdx = loader.padIdx
 
-local model = nn.NMT(opt)
+opt.word2char = loader:buildCharSource(15)
+opt.featureMaps = {50, 100, 150, 200, 200, 200, 200}
+opt.kernels = {1, 2, 3, 4, 5, 6, 7}
+opt.charSize = 15
+local model = nn.CharNMT(opt)
 model:type('torch.CudaTensor')
 -- prepare data
 function prepro(input)
     local x, y = unpack(input)
     local seqlen = y:size(2)
     -- make contiguous and transfer to gpu
-    x = x:contiguous():cudaLong()
-    prev_y = y:narrow(2, 1, seqlen-1):contiguous():cudaLong()
-    next_y = y:narrow(2, 2, seqlen-1):contiguous():cudaLong()
+    x = x:contiguous():cuda()
+    prev_y = y:narrow(2, 1, seqlen-1):contiguous():cuda()--:type('torch.CudaLongTensor')
+    next_y = y:narrow(2, 2, seqlen-1):contiguous():cuda()--type('torch.CudaLongTensor')
 
     return x, prev_y, next_y
 end
@@ -50,18 +55,18 @@ function train()
         local totwords = 0
         timer:reset()
         print('learningRate: ', opt.learningRate)
-        print('number of batches', nbatches)
         for i = 1, nbatches do
             local x, prev_y, next_y = prepro(loader:next())
             model:clearState()
             nll = nll + model:forward({x, prev_y}, next_y)
             model:backward({x, prev_y}, next_y)
             model:update(opt.learningRate)
+            --nll = nll + model:optimize({x, prev_y}, next_y)
             nupdates = nupdates + 1
             totwords = totwords + prev_y:numel()
             if i % opt.reportEvery == 0 then
                 local floatEpoch = (i / nbatches) + epoch - 1
-                local msg = 'epoch %.4f / %d   [ppl] %.4f   [speed] %.2f w/s [update] %.3f'
+                local msg = 'epoch %.4f / %d   [ppl] %.4f   [speed] %.2f w/s   [update] %.3f K'
                 local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i), totwords / timer:time().real, nupdates/1000}
                 print(string.format(unpack(args)))
                 collectgarbage()
@@ -76,8 +81,8 @@ function train()
         local nll = 0 -- validation loss
         local nbatches = loader.nbatches
         for i = 1, nbatches do
-            model:clearState()
             local x, prev_y, next_y = prepro(loader:next())
+            model:clearState()
             nll = nll + model:forward({x, prev_y}, next_y:view(-1))
             if i % 50 == 0 then collectgarbage() end
         end
@@ -95,10 +100,6 @@ end
 local eval = opt.modelFile and opt.textFile
 
 if not eval then
-    if opt.restart then
-        model:load(opt.restartModelFile)
-        opt.learningRate = opt.lastLearningRate
-    end
     train()
 else
     opt.transFile =  opt.transFile or 'translation.txt'
