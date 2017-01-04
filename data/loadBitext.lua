@@ -46,6 +46,8 @@ function DataLoader:__init(opt)
     assert(self.padIdx == 1)
 end
 
+
+
 function DataLoader:buildCharSource(maxlen)
     return self:buildchar(self.vocab[1].idx2word, maxlen)
 end
@@ -115,4 +117,18 @@ function DataLoader:text2tensor(textfiles, shardSize, batchSize, tracker)
     if nsents % shardSize  > 1 then
         self:saveShard(buckets, batchSize, tracker)
     end
+end
+function DataLoader:getTargetIdx()
+    local targetIdx = {}
+    for i,w in pairs(self.vocab[2].idx2word) do
+        table.insert(targetIdx,i)
+    return targetIdx
+end
+
+function DataLoader:getMetaSymbolsIdx()
+    local result = {}
+    for _,s in ipairs(self._startvocab) do
+        table.insert(result,self.vocab[2].idx(s))
+    end
+    return result
 end

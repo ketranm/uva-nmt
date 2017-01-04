@@ -32,6 +32,19 @@ function AbstractDataLoader:load(tracker)
     self.nbatches = tracker.size
 end
 
+
+function AbstractDataLoader:loadForTesting(tracker)
+    local fnames = {}
+    for i = 1, tracker.fidx do
+        local file = string.format('%s/%s.shard_%d.t7',
+                                    self.dataPath, tracker.name, i)
+        table.insert(fnames, file)
+    end
+    self._tensorfiles = fnames
+    self.isize = 0
+    self.nbatches = tracker.size
+end
+
 function AbstractDataLoader:train()
     self:load(self.tracker[1])
 end
