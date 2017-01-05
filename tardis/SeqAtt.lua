@@ -3,6 +3,7 @@
 require 'tardis.GlimpseDot'
 require 'optim'
 require 'tardis.FastTransducer'
+require 'moses'
 local model_utils = require 'tardis.model_utils'
 
 local utils = require 'misc.utils'
@@ -73,6 +74,15 @@ function NMT:forward(input, target)
 
     local logProb = self:stepDecoder(input[2])
     return self.criterion:forward(logProb, target)
+end
+
+-- author: Katya Garmash 
+function NMT:forwardAndExtractErrors(input,target,errorFilters)
+    self:stepEncoder(input[1])
+    local logProb = self:stepDecoder(input[2])
+    local _,predictions = logProb:topk(1,true)
+    local errors = torch.ne(predictions,target)
+    return predictions, errors
 end
 
 function NMT:backward(input, target)
