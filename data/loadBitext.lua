@@ -130,6 +130,7 @@ function DataLoader:getTargetIdx()
     local targetIdx = {}
     for i,w in pairs(self.vocab[2].idx2word) do
         table.insert(targetIdx,i)
+    end
     return targetIdx
 end
 
