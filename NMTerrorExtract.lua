@@ -69,6 +69,8 @@ function extractTypedErrors(predictions, reference, errorsPositions,errorExtract
     end
 end
 
+
+
 -- initialize model in evaluation mode
 local model = nn.NMT(opt)
 model:type('torch.CudaTensor')
@@ -80,7 +82,7 @@ loader:train()
 local nbatches = loader.nbatches
 print("Number of batches: ",nbatches)
 for i = 1, nbatches do
-	local x, prev_y, next_y = prepro(loader:next())
+	local x, prev_y, next_y = prepro(loader:next_origOrder())
     model:clearState()
     local predictions, errors = model:forwardAndExtractErrors({x,prev_y},next_y)
     table.insert(errorCollection,errors)
