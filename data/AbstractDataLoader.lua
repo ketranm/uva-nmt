@@ -70,6 +70,21 @@ function AbstractDataLoader:next()
     return self.data[idx]
 end
 
+function AbstractDataLoader:next_origOrder()
+    local idx = 0
+    if self.isize == 0 then
+        local file = table.remove(self._tensorfiles)
+        self.data = torch.load(file)
+        self.isize = #self.data
+        self.permidx = torch.range(self.isize)
+        idx = self.permidx[self.isize]
+    else
+        idx = self.permidx[self.isize]
+    end
+    self.isize = self.isize - 1
+    return self.data[idx]
+
+end
 
 function AbstractDataLoader:tensorize()
     err('not yet implemented!')
