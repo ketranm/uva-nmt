@@ -29,6 +29,7 @@ function AbstractDataLoader:load(tracker)
     end
     self._tensorfiles = _.shuffle(fnames)
     self.isize = 0
+    print("tracker size",tracker.size)
     self.nbatches = tracker.size
 end
 
@@ -46,6 +47,7 @@ function AbstractDataLoader:loadForTesting(tracker)
 end
 
 function AbstractDataLoader:train()
+    print("TEST")
     self:load(self.tracker[1])
 end
 
