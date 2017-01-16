@@ -79,6 +79,15 @@ function BinaryTranslError:computePairwiseStatistics()
 end
 
 
+local BinaryTranslError,parent = torch.class('torch.BinaryTranslError','LocalTranslError')
+
+function BinaryTranslError:__init() 
+	self.errorObservations = {}
+end
+
+function BinaryTranslError:extractError(sentN,positN)
+	table.insert(self.errorObservations,{sentN,positN})
+end
 
 local RefWordTranslError, parent = torch.class('torch.RefWordTranslError', 'LocalTranslError')
 
