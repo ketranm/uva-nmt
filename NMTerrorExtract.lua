@@ -5,8 +5,11 @@ require 'cunn'
 
 require 'data.loadBitext'
 require 'tardis.SeqAtt'
+local _ = require 'moses'
+
 local cfg = require 'pl.config'
 local opt = cfg.read(arg[1])
+
 
 local loader = DataLoader(opt)
 opt.padIdx = loader.padIdx
@@ -44,32 +47,6 @@ end
 
 
 
---extract errors from batch
-function extractTypedErrors(predictions, reference, errorsPositions,errorExtractors)
-	--print("errors posit ",errorsPositions:size())
-	--print(predictions:size())
-	--print(reference:size())
-    assert(errorsPositions:size(1) == predictions:size(1))
-    assert(reference:size(1) == predictions:size(1))
-    assert(errorsPositions:size(2) == predictions:size(2))
-    assert(reference:size(2) == predictions:size(2))
-	local numSent = errorsPositions:size(1)
-    local seqLen = errorsPositions:size(2)
-
-    for i=1,numSent do
-        local predVector = predictions[i]
-        local refVector = reference[i]
-        for j=1,seqLen do
-        	if errorsPositions[i][j] then
-        		for _,extractor in pairs(errorExtractors) do
-        			extractor:extractError(i,j,refVector,predVector)
-        		end
-        	end
-        end
-    end
-end
-
-
 
 -- initialize model in evaluation mode
 local model = nn.NMT(opt)
@@ -78,7 +55,7 @@ model:load(opt.modelFile)
 model:evaluate()
 
 local errorCollection = {}
-loader:train()
+loader:loadForTesting(loader.tracker[1])
 local nbatches = loader.nbatches
 print("Number of batches: ",nbatches)
 for i = 1, nbatches do
