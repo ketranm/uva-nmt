@@ -27,7 +27,7 @@ function MultiDataLoader:__init(mainKwargs,multiKwargs)
 	self.srcVocabSizes = _.map(multiKwargs,function(i,v) return v.srcVocabSize end)
 	self.vocabs = _.map(multiKwargs, function(i,kw) 
 			local vocFile =path.join(kw.dataPath,'vocab.t7') 
-			local voc = toach.load(vocFile)
+			local voc = torch.load(vocFile)
 			end)
 	if not path.exists(indexfile) then 
 		local batchSize = mainKwargs.batchSize
