@@ -21,14 +21,16 @@ function DataLoader:__init(opt)
     -- auxiliary file to store additional information about shards
     local indexfile = path.join(opt.dataPath, 'index.t7')
     self.vocab = {}
-    if opt.useTrainVocab then -- in case we're working with the heldout files for ensemble analysis
+    if opt.useTrainVocab == 1 then -- in case we're working with the heldout files for ensemble analysis
         self.vocab = torch.load(vocabfile)
         if not path.exists(indexfile) then
             print('=> create ensemble heldout tensor files...')
             self:text2tensor(trainfiles, opt.shardSize, opt.batchSize, self.tracker[1])
             torch.save(indexfile, self.tracker)
+	else
+	    self.tracker = torch.load(indexfile)
         end
-    end
+    else 
     if not path.exists(vocabfile) then
         print('=> creating source vocabulary ...')
         self:shortlist(opt.sourceSize)
@@ -49,6 +51,7 @@ function DataLoader:__init(opt)
     else
         self.vocab = torch.load(vocabfile)
         self.tracker = torch.load(indexfile)
+    end
     end
     self.padIdx = self.vocab[2].idx('<pad>')
     assert(self.padIdx == 1)
@@ -76,7 +79,7 @@ function DataLoader:saveShard(buckets, batchSize, tracker)
 
     if not tracker.fidx then tracker.fidx = 0 end
     tracker.fidx = tracker.fidx + 1
-
+    print("tracker fidx: ",tracker.fidx)
     local file = string.format('%s/%s.shard_%d.t7',
                                 self.dataPath, tracker.name, tracker.fidx)
     torch.save(file, shard)
