@@ -36,6 +36,7 @@ end
 
 function AbstractDataLoader:loadForTesting(tracker)
     local fnames = {}
+    
     for i = 1, tracker.fidx do
         local file = string.format('%s/%s.shard_%d.t7',
                                     self.dataPath, tracker.name, i)
@@ -76,7 +77,7 @@ function AbstractDataLoader:next_origOrder()
         local file = table.remove(self._tensorfiles)
         self.data = torch.load(file)
         self.isize = #self.data
-        self.permidx = torch.range(self.isize)
+        self.permidx = torch.range(1,self.isize)
         idx = self.permidx[self.isize]
     else
         idx = self.permidx[self.isize]
@@ -171,7 +172,6 @@ function AbstractDataLoader.encodeString(s, vocab, padtype, vectorized)
     for _, w in ipairs(ws) do
         table.insert(xs, vocab.idx(w))
     end
-
     if padtype == 'last' or padtype == 'both' then
         table.insert(xs, vocab.idx('</s>'))
     end

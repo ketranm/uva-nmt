@@ -5,21 +5,24 @@ local MultiDataLoader, parent = torch.class('MultiDataLoader', 'AbstractDataLoad
 
 function MultiDataLoader:__init(mainKwargs,multiKwargs)
     parent.__init(self)
-
+    self.dataPath = mainKwargs.dataPath
 	--data
-	self.langs = {trg = mainKwargs.trg}
-    for i,kwargs in ipairs(multiKwargs) do self.langs['src'..i] = kwargs.src end
+    self.langs = {trg = mainKwargs.target}
+    for i,kwargs in ipairs(multiKwargs) do self.langs[i] = kwargs.source end
 
-	local trainPrefix = mainKwargs.combinTrainPrefix
+    local trainPrefix = mainKwargs.combinTrainPrefix
     local validPrefix = mainKwargs.combinValidPrefix
     local testPrefix = mainKwargs.testPrefix
-    local srcLangs = _.map(self.langs,function(langType,v) if langType:find('src') then return v end end)
+    local srcLangs = {}
+    for langN=1,#self.langs do
+	table.insert(srcLangs,self.langs[langN])
+    end
     local multiSrcFiles = _.map(srcLangs, function(i,v) return path.join(multiKwargs[i].dataPath,trainPrefix..'.'..v) end)
-    local multiSrcFilesValid = _.map(srcLangs,function(i,v) return path.join(multiKwargs[i].dataPath,validPrefix..'.'..v) end)
-    local multiSrcFilesTest = _.map(srcLangs,function(i,v) return path.join(multiKwargs[i].dataPath,testPrefix..'.'..v) end)
-    local trgFile = path.join(multiKwargs[1].dataPath,trainPrefix..'.'..mainKwargs.trg)
-    local trgFileValid = path.join(multiKwargs[1].dataPath,validPrefix..'.'..mainKwargs.trg)
-    local trgFileTest = path.join(multiKwargs[1].dataPath,testPrefix..'.'..mainKwargs.trg)
+    --local multiSrcFilesValid = _.map(srcLangs,function(i,v) return path.join(multiKwargs[i].dataPath,validPrefix..'.'..v) end)
+    --local multiSrcFilesTest = _.map(srcLangs,function(i,v) return path.join(multiKwargs[i].dataPath,testPrefix..'.'..v) end)
+    local trgFile = path.join(multiKwargs[1].dataPath,trainPrefix..'.'..mainKwargs.target)
+    --local trgFileValid = path.join(multiKwargs[1].dataPath,validPrefix..'.'..mainKwargs.target)
+    --local trgFileTest = path.join(multiKwargs[1].dataPath,testPrefix..'.'..mainKwargs.target)
 
     -- auxiliary file to store additional information about shards
     local indexfile = path.join(mainKwargs.dataPath, 'index.t7')
@@ -28,19 +31,20 @@ function MultiDataLoader:__init(mainKwargs,multiKwargs)
 	self.vocabs = _.map(multiKwargs, function(i,kw) 
 			local vocFile =path.join(kw.dataPath,'vocab.t7') 
 			local voc = torch.load(vocFile)
+			return voc
 			end)
 	if not path.exists(indexfile) then 
-		local batchSize = mainKwargs.batchSize
+	local batchSize = mainKwargs.batchSize
     	local shardSize = mainKwargs.shardSize
     	 print('=> create multisource training tensor files...')
 		self:text2tensor(multiSrcFiles,trgFile,shardSize,batchSize,self.tracker[1])
 		print('=> create multisource validation tensor files...')
-		self:text2tensor(multiSrcFilesValid,trgFileValid,shardSize,batchSize,self.tracker[2])
+		--self:text2tensor(multiSrcFilesValid,trgFileValid,shardSize,batchSize,self.tracker[2])
 		torch.save(indexfile, self.tracker)
     else
         self.tracker = torch.load(indexfile)
     end
-    self.padIdx = self.vocab[2].idx('<pad>')
+    self.padIdx = self.vocabs[1][2].idx('<pad>')
     assert(self.padIdx == 1)
 end
 
@@ -61,9 +65,8 @@ function MultiDataLoader:text2tensor(srcFiles, trgFile, shardSize, batchSize, tr
     If the files are too large, process a shard of shardSize sentences at a time
     --]]
 
-   local trgIterator = io.lines(targetFile)
+   local trgIterator = io.lines(trgFile)
    local multiSrcIterator = multiFileIterator(srcFiles)
-
     -- helper
     local nsents = 0 -- sentence counter
     local buckets = {}
@@ -71,7 +74,6 @@ function MultiDataLoader:text2tensor(srcFiles, trgFile, shardSize, batchSize, tr
     local prime = 997 -- use a large prime number to avoid hash collision
 
     while true do
-    	
     	local multiSrc =  multiSrcIterator()
         if multiSrc == nil then break end
         local trg = trgIterator()
@@ -79,54 +81,58 @@ function MultiDataLoader:text2tensor(srcFiles, trgFile, shardSize, batchSize, tr
         local trgTokens = stringx.split(trg)
         if _.reduce(multiSrcTokens,function(memo,v) return memo and (#v ~=0) end) and  #trgTokens ~= 0 then --omit empty sentences
         	nsents = nsents + 1
-        	local srcIdx = _.map(multiSrcTokens, function(i,v) self.encodeString(v,self.vocabs[i][1],'none') end)
-        	local trgIdx = self.encodeString(trgTokens, self.vocab[1][2], 'both')  -- trg.vocabularyes the same across lang.pairs
+        	local srcIdx = _.map(multiSrc, function(i,v) return self.encodeString(v,self.vocabs[i][1],'none') end)
+        	local trgIdx = self.encodeString(trg, self.vocabs[1][2], 'both')  -- trg.vocabularyes the same across lang.pairs
         	local trgLen = #trgIdx + diff - (#trgIdx % diff)
         	-- hashing
 	        local bidx = trgLen
 	        for i=1,#srcIdx do bidx = bidx*prime + #srcIdx[i] end
 	        -- reverse the source sentence
 	        srcIdx = _.map(srcIdx, function(i,v) return _.reverse(v) end)
-			for i = 1, trgLen - #trgIdx do table.insert(trgIdx, self.vocab[1][2].idx('<pad>')) end
+			for i = 1, trgLen - #trgIdx do table.insert(trgIdx, self.vocabs[1][2].idx('<pad>')) end
 			-- put sentence pairs to corresponding bucket
 	        buckets[bidx] = buckets[bidx] or {_.map(srcFiles, function(i,v) return {} end), {}}
     	    local bucket = buckets[bidx]
-    	    _.each(bucket[1],function(i,v) table.insert(bucket[1][i],srcIdx[i] end)
-        	table.insert(bucket[2], trgIdx)
-        	if  nsents % shardSize == 0 then
+	    for i,b in ipairs(bucket[1]) do
+		table.insert(bucket[1][i],srcIdx[i])
+	    end
+            table.insert(bucket[2], trgIdx)
+            if  nsents % shardSize == 0 then
             	self:saveShard(buckets, batchSize, tracker)
             	buckets = {}
             end
-           	if nsents % shardSize  > 1 then
+           	if nsents % shardSize  == 0 then
         		self:saveShard(buckets, batchSize, tracker)
     		end
         end
 
-    end	        
+    end	       
     if nsents % shardSize  > 1 then
         self:saveShard(buckets, batchSize, tracker)
     end
 end
 
 
-function DataLoader:saveShard(buckets, batchSize, tracker)
+function MultiDataLoader:saveShard(buckets, batchSize, tracker)
     local shard = {}
     for bidx, bucket in pairs(buckets) do
         -- make a big torch.IntTensor matrix
-        local ss = _.map(bucket[1], function(i,v) return torch.IntTensor(bucket[1][i]):split(batchSize, 1)
+        local ss = _.map(bucket[1], function(i,v) return torch.IntTensor(v):split(batchSize, 1) end)
         local ts = torch.IntTensor(bucket[2]):split(batchSize, 1)
         buckets[bidx] = nil -- free memory
         -- sanity check
         assert(#ss[1] == #ts)
         assert(#ss[2] == #ss[2])
         for i = 1, #ts do
-            table.insert(shard, { _.map(ss, function(k,v) return v[i] end}, ts[i]})
+            table.insert(shard, { _.map(ss, function(k,v) return v[i] end), ts[i]})
         end
+	
     end
 
     if not tracker.fidx then tracker.fidx = 0 end
     tracker.fidx = tracker.fidx + 1
-
+    print("Saving to ", string.format('%s/%s.shard_%d.t7',
+                                self.dataPath, tracker.name, tracker.fidx))
     local file = string.format('%s/%s.shard_%d.t7',
                                 self.dataPath, tracker.name, tracker.fidx)
     torch.save(file, shard)
