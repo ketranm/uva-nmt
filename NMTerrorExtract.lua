@@ -27,23 +27,7 @@ function prepro(input)
 
     return x, prev_y, next_y
 end
--- initialize error extractors
-local errorExtractors = {}
-for i=2,#arg do
-	a = arg[i] 
-	if a == 'BINARY' then
-		errorExtractors[a] = torch.BinaryTranslError()
-	elseif a == 'REF_SYMBOL' then
-		errorExtractors[a] = torch.RefWordTranslError(targetVocIdx,metaSymbols)
-	else
-		ngramOrder = string.match(a,"NGRAM([0-9]+)")
-		if ngramOrder then
-			--if errorExtractors["NGRAM"] == nil then errorExtractors["NGRAM"] = {} end
-			errorExtractors[a] = 
-				torch.NgramContextTranslError(targetVocIdx,metaSymbols,tonumber(ngramOrder))
-		end
-	end
-end
+
 
 
 
