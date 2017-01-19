@@ -23,18 +23,6 @@ function DataLoader:__init(opt)
     self.vocab = {}
 
     if not path.exists(vocabfile) then
-         if opt.loadMultiSourceData then
-            -- index file will be  created later
-            self.vocab = torch.load(opt.vocabfile)
-            torch.save(vocabfile,self.vocab)
-            self.nsents = 0
-            self.currShard = {}
-            --[[if not path.exists(indexfile) then
-                print('=> create ensemble heldout tensor files...')
-                self:text2tensor(trainfiles, opt.shardSize, opt.batchSize, self.tracker[1])
-                torch.save(indexfile, self.tracker)
-            end ]]--
-        else
             print('=> creating source vocabulary ...')
             self:shortlist(opt.sourceSize)
             self.vocab[1] = self.makeVocab(self, trainfiles[1])
@@ -51,10 +39,16 @@ function DataLoader:__init(opt)
             self:text2tensor(validfiles, opt.shardSize, opt.batchSize, self.tracker[2])
 
             torch.save(indexfile, self.tracker)
-        end
     else
         self.vocab = torch.load(vocabfile)
-        self.tracker = torch.load(indexfile)
+         if opt.loadMultiSourceData  == 1 then
+            -- index file will be  created later
+            self.nsents = 0
+            self.currShard = {}
+	    self.currTracker = self.tracker[1]
+        else
+        	self.tracker = torch.load(indexfile)
+	end
     end
     self.padIdx = self.vocab[2].idx('<pad>')
     assert(self.padIdx == 1)
@@ -82,7 +76,7 @@ function DataLoader:saveShard(buckets, batchSize, tracker)
 
     if not tracker.fidx then tracker.fidx = 0 end
     tracker.fidx = tracker.fidx + 1
-
+    print("tracker fidx: ",tracker.fidx)
     local file = string.format('%s/%s.shard_%d.t7',
                                 self.dataPath, tracker.name, tracker.fidx)
     torch.save(file, shard)
@@ -93,27 +87,28 @@ end
 function DataLoader:addBatch(batch,shardSize)
     table.insert(self.currShard,batch)
     self.nsents = self.nsents + batch[1]:size(1)
-    if self.nsent % shardSize == 0 then  
-        if not tracker.fidx then tracker.fidx = 0 end
-        tracker.fidx = tracker.fidx + 1
+    if self.nsents % shardSize == 0 then  
+        if not self.currTracker.fidx then self.currTracker.fidx = 0 end
+        self.currTracker.fidx = self.currTracker.fidx + 1
         local file = string.format('%s/%s.shard_%d.t7',
-                                self.dataPath, tracker.name, tracker.fidx)
+                                self.dataPath, self.currTracker.name, self.currTracker.fidx)
         torch.save(file, shard)
-        tracker.size = (tracker.size or 0) + #shard
+        self.currTracker.size = (self.currTracker.size or 0) + #shard
         collectgarbage()
     end
 end
 
-function DataLoader:saveCurrentShard()
+function DataLoader:saveCurrentShard(shardSize,indexfile)
     if self.nsents % shardSize  > 1 then
-        if not tracker.fidx then tracker.fidx = 0 end
-        tracker.fidx = tracker.fidx + 1
+        if not self.currTracker.fidx then self.currTracker.fidx = 0 end
+        self.currTracker.fidx = self.currTracker.fidx + 1
         local file = string.format('%s/%s.shard_%d.t7',
-                                self.dataPath, tracker.name, tracker.fidx)
-        torch.save(file, shard)
-        tracker.size = (tracker.size or 0) + #shard
+                                self.dataPath, self.currTracker.name, self.currTracker.fidx)
+        torch.save(file, self.currShard)
+        self.currTracker.size = (self.currTracker.size or 0) + #self.currShard
         collectgarbage()
     end 
+    torch.save(indexfile,self.currTracker)
 end
 
 function DataLoader:text2tensor(textfiles, shardSize, batchSize, tracker)
