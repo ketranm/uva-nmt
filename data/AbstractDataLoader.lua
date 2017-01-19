@@ -47,7 +47,6 @@ function AbstractDataLoader:loadForTesting(tracker)
 end
 
 function AbstractDataLoader:train()
-    print("TEST")
     self:load(self.tracker[1])
 end
 
