@@ -149,6 +149,7 @@ function EnsemblePrediction:translate(xs)
         end
     end
     local _, idx = torch.Tensor(nbestScores):topk(1, true)
+    print('test')
     return nbestCands[idx[1]]
 
 end
