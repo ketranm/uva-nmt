@@ -1,14 +1,12 @@
-local EnsemblePrediction = torch.class("EnsemblePredction")
+local EnsemblePrediction = torch.class('EnsemblePrediction')
 local cfg = require 'pl.config'
-require 'SeqAtt'
+require 'tardis.SeqAtt'
 local _ = require 'moses'
-require 'BeamSearch'
-require 'ensembleCombination'
+require 'tardis.BeamSearch'
+require 'tardis.ensembleCombination'
 
 
-function EnsemblePredction:__init(kwargs)
-    local self = {}
-    setmetatable(self,Ensemble)
+function EnsemblePrediction:__init(kwargs,multiKwargs)
     --combination parameters
     self.combinInput = kwargs.combinInput
     self.contextCombinInput = kwargs.contextCombinInput
@@ -16,9 +14,7 @@ function EnsemblePredction:__init(kwargs)
     self.beamSize = kwargs.beamSize
     self.maxLength = kwargs.maxLength
     scalarWeights = {}
-    for w in kwargs.scWeights:gmatch("%S+") do
-        table.insert(scalarWeights,w)
-    end
+    for w in kwargs.scWeights:gmatch("%S+") do table.insert(scalarWeights,w) end
 
     --models parameters
     ------self.embeddingSize = kwargs.embeddingSize   
@@ -27,38 +23,37 @@ function EnsemblePredction:__init(kwargs)
     self.configs = {}
     self.vocabs = {}
     self.numModels = 0
-    for config in kwargs.configFiles:gmatch("%S+") do
+    for i,model_kwargs in ipairs(multiKwargs) do 
        self.numModels = self.numModels + 1
-       local model_kwargs = cfg.read(config)
-        local vocab = model_kwargs.vocabFile
+        local vocab = torch.load(model_kwargs.dataPath..'/vocab.t7')
         local m = nn.NMT(model_kwargs)
-        m:use_vocab(vocab)
-        m:evaluate()
+        --m:use_vocab(vocab)
+        m:type('torch.CudaTensor')
         m:load(model_kwargs.modelFile)
+        m:evaluate()
         table.insert(self.vocabs,vocab)
         table.insert(self.models,m)
         table.insert(self.configs,model_kwargs)
     end 
         
-
     --decoding parameters
-    self.K = opt.beamSize or 10
-    self.Nw = opt.Nw or self.K * self.K
-    self.reverseInput = opt.reverseInput or true
-    self.normLength = opt.normLength or 0 -- 1 if we normalized scores by length
+    self.K = kwargs.beamSize or 10
+    self.Nw = kwargs.Nw or self.K * self.K
+    self.reverseInput = kwargs.reverseInput or true
+--    self.normLength = kwargs.normLength or 0 -- 1 if we normalized scores by length
 
-    self.bosidx = self.vocab[1][2].word2idx['<s>']
-    self.eosidx = self.vocab[1][2].word2idx['</s>']
-    self.unkidx = self.vocab[1][2].word2idx['<unk>']
-    self.padidx = self.vocab[1][2].word2idx['<pad>']
+    self.bosidx = self.vocabs[1][2].word2idx['<s>']
+    self.eosidx = self.vocabs[1][2].word2idx['</s>']
+    self.unkidx = self.vocabs[1][2].word2idx['<unk>']
+    self.padidx = self.vocabs[1][2].word2idx['<pad>']
 
     self._ignore = {[self.bosidx] = true, [self.eosidx] = true}
-    self.normLength = opt.normLength or 1
+    self.normLength = kwargs.normLength or 1
     
 
     --combination function
     if self.combinMethod == 'scalar' then
-        self.combinMachine = combinMachine.scalarCombination(self.scalarWeights,self.trgVocabSize,self.combinInput)
+        self.combinMachine = scalarCombination(scalarWeights,self.trgVocabSize,self.combinInput)
     elseif self.combinMethod == 'scalarRandom' then
         self.combinMachine = combinMachine.randomScalarCombination(self.combinInput)
     elseif self.combinMethod == 'loglinCombination' then
@@ -76,18 +71,18 @@ end
 
 
 function EnsemblePrediction:translate(xs)
-    for _,m in ipairs(self.models) do 
-        m:clearState() end
+    for i,m in ipairs(self.models) do 
+        m:clearState() 
         m.decoder.rememberStates = true
     end
-    
     local K, Nw = self.K, self.Nw
-    local xs = _.map(xs, function(i,x) return BeamSearch.encodeString(x, self.vocabs[i][1], self.reverseInput) end)
+    local xs = _.map(xs, function(i,x) return encodeString(x, self.vocabs[i][1], self.reverseInput) end)
     -- not that if we do this, the first prediction will be the same
     xs = _.map(xs,function(i,x) return x:repeatTensor(K, 1) end)
     local srcLengths = _.map(xs,function(i,x) return x:size(2) end)
-    local T =  maxLength --  or utils.round(srcLength * 1.4) TODO functon of all source sentences?
-    for i,x in ipairs(xs) do self.models[i]:stepEncoder(x) end
+    local T =  self.maxLength --  or utils.round(srcLength * 1.4) TODO functon of all source sentences?
+    for i,x in ipairs(xs) do
+	self.models[i]:stepEncoder(x) end
 
     local hypos = torch.CudaLongTensor(K, T):fill(self.bosidx)
     local nbestCands = {}
@@ -97,7 +92,7 @@ function EnsemblePrediction:translate(xs)
     
     for t = 1, T-1 do
         local curIdx = hypos[{{}, {t}}] -- t-th slice (column size K)
-        local logProb = EnsemblePrediction:decodeAndCombinePredictions(curIdx,t)
+        local logProb = self:decodeAndCombinePredictions(curIdx,t)
 
         
         local maxscores, indices = logProb:topk(Nw, true)
@@ -141,16 +136,14 @@ function EnsemblePrediction:translate(xs)
         -- keep survival hypotheses
         hypos = hypos:index(1, rowIdx)
         hypos[{{}, t+1}] = colIdx
-        for i,m in self.models do
-            m:indexStates(rowIdx)
-        end
+        for i,m in ipairs(self.models) do m:indexStates(rowIdx) end
 
         if #nbestCands == 0 then
         assert(K == self.K)
         scores = scores:view(-1)
         scores:div(T^alpha)
         for i = 1, K do
-            local text = BeamSearch.decodeString(hypos[i], self.vocabs[1][2].idx2word, self._ignore)
+            local text = decodeString(hypos[i], self.vocabs[1][2].idx2word, self._ignore)
             table.insert(nbestCands, text)
             table.insert(nbestScores, scores[i])
         end
@@ -159,8 +152,8 @@ function EnsemblePrediction:translate(xs)
     return nbestCands[idx[1]]
 
 end
-
-function EnsemblePrediction:decodeAndCombinePredictions(input,timeStep)
+end
+function EnsemblePrediction:decodeAndCombinePredictions(curIdx,timeStep)
     local logProbs = _.map(self.models, function(i,m) return m:stepDecoder(curIdx) end) 
     -- quick hack to handle the first prediction
     for i,lPr in ipairs(logProbs) do
