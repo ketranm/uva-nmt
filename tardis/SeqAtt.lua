@@ -81,8 +81,8 @@ function NMT:forwardAndExtractErrors(input,target,errorFilters)
     self:stepEncoder(input[1])
     local logProb = self:stepDecoder(input[2])
     local _,predictions = logProb:topk(1,true)
-    local errors = torch.ne(predictions,target)
-    return predictions, errors
+    local errors = torch.ne(predictions:view(target:size(1),target:size(2)),target)
+    return predictions:view(target:size(1),target:size(2)), errors
 end
 
 function NMT:backward(input, target)
