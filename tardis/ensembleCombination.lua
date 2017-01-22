@@ -44,3 +44,27 @@ function scalarCombination(scWeights,outputDim,inputType)
 		return comb
 	end
 end
+
+function entropyConfidence()
+	function negEntropy(distrib)
+		local prob = torch.exp(distrib)
+		return torch.sum(distrib:cmul(prob))
+	end
+	function softm(t)
+		local e = torch.exp(vector)
+		local Z = torch.sum(e)
+		return e/Z
+	end
+	function comb(tableOutputs)
+		local negEntropies = torch.Tensor(_.map(tableOutputs,function(i,v) return negEntropy(v) end))
+		local weights = softm(negEntropies)
+		local totalOut = torch.mul(tableOutputs[1],weights[1])
+		for i=2,#tableOutputs do totalOut:add(torch.mul(tableOutputs[i],weights[i])) end
+		return totalOut
+	end
+
+	return comb
+end
+
+
+
