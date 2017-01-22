@@ -115,7 +115,7 @@ function EnsemblePrediction:translate(xs)
             -- add to nbest
             xscores:div(t^alpha)
             for i = 1, nx do
-                local text = BeamSearch.decodeString(completedHyps[i], self.vocab[2].idx2word, self._ignore)
+                local text = decodeString(completedHyps[i], self.vocabs[1][2].idx2word, self._ignore)
                 local s = xscores[i]
                 table.insert(nbestCands, text)
                 table.insert(nbestScores, s)

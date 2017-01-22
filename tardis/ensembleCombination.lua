@@ -1,4 +1,4 @@
-
+local _ = require 'moses'
 
 function scalarCombination(scWeights,outputDim,inputType)
 	local weights = scWeights
