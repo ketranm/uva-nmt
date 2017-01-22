@@ -135,8 +135,9 @@ function EnsemblePrediction:translate(xs)
         hypos = hypos:index(1, rowIdx)
         hypos[{{}, t+1}] = colIdx
         for i,m in ipairs(self.models) do m:indexStates(rowIdx) end
+    end
 
-        if #nbestCands == 0 then
+    if #nbestCands == 0 then
         assert(K == self.K)
         scores = scores:view(-1)
         scores:div(T^alpha)
@@ -150,7 +151,8 @@ function EnsemblePrediction:translate(xs)
     return nbestCands[idx[1]]
 
 end
-end
+
+
 function EnsemblePrediction:decodeAndCombinePredictions(curIdx,timeStep)
     local logProbs = _.map(self.models, function(i,m) return m:stepDecoder(curIdx) end) 
     -- quick hack to handle the first prediction
