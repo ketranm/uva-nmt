@@ -41,8 +41,8 @@ errorFiles = {}
 for eFile in string.gmatch(opt_1.ensembleErrorFiles,"[^%s]+") do
     table.insert(errorFiles,eFile)
 end
-if hypothesis = 'mutualDifference' then
-	i = 1
+if hypothesis == 'mutualDifference' then
+	local i = 1
 	for eFile in string.gmatch(opt_2.ensembleErrorFiles,"[^%s]+") do
 		print(eFile)
 		if i == 2 then table.insert(errorFiles,eFile) end
@@ -54,7 +54,7 @@ print(errorFiles)
 local errors_1 = torch.load(errorFiles[1])
 local errors_2 = torch.load(errorFiles[2])
 local errors_3 = nil
-if hypothesis = 'mutualDifference' then 
+if hypothesis == 'mutualDifference' then 
 	errors_3 = torch.load(errorFiles[3])
 else 
 	errors_3 = errors_1
@@ -79,7 +79,7 @@ errorExtractor_13:reset()
 
 
 
-r = 5000 -- num of permutations
+r = 100 -- num of permutations
 c = {}
 actual_stat_diff = {}
 for stat,_ in pairs(statistics_12[1]) do
@@ -126,7 +126,8 @@ for iter=1,r do
 	for stat,r_val_12 in pairs(r_statistics_12[1]) do
 		local diff = torch.abs(r_val_12 - r_statistics_13[1][stat])
 		--print(r_val_12)
-		--print(r_statistics_13[1][stat])
+		print(stat)
+		print(r_statistics_13[1][stat])
 		if diff >= actual_stat_diff[stat] then 
 			c[stat] = c[stat] + 1
 		end
