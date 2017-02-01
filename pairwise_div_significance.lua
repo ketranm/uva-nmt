@@ -3,8 +3,13 @@ require 'nn'
 require 'cutorch'
 require 'cunn'
 local cfg = require 'pl.config'
+local hypothesis = 'absoluteDivergence'
 local opt_1 = cfg.read(arg[1]) -- sys_1 and sys_2
-local opt_2 = cfg.read(arg[2]) -- sys_1 and sys_3
+if #arg == 2 then
+	hypothesis = 'mutualDifference'
+	local opt_2 = cfg.read(arg[2]) -- sys_1 and sys_3
+end
+
 function extractTypedErrors(errors1, errors2, reference,errorExtractors)
     assert(errors1:size(1) == errors2:size(1))
     assert(reference:size(1) == errors1:size(1))
@@ -36,17 +41,24 @@ errorFiles = {}
 for eFile in string.gmatch(opt_1.ensembleErrorFiles,"[^%s]+") do
     table.insert(errorFiles,eFile)
 end
-i = 1
-for eFile in string.gmatch(opt_2.ensembleErrorFiles,"[^%s]+") do
-	print(eFile)
-	if i == 2 then table.insert(errorFiles,eFile) end
-	i = i + 1 
+if hypothesis = 'mutualDifference' then
+	i = 1
+	for eFile in string.gmatch(opt_2.ensembleErrorFiles,"[^%s]+") do
+		print(eFile)
+		if i == 2 then table.insert(errorFiles,eFile) end
+		i = i + 1 
+	end
 end
 print(errorFiles)
 
-errors_1 = torch.load(errorFiles[1])
-errors_2 = torch.load(errorFiles[2])
-errors_3 = torch.load(errorFiles[3])
+local errors_1 = torch.load(errorFiles[1])
+local errors_2 = torch.load(errorFiles[2])
+local errors_3 = nil
+if hypothesis = 'mutualDifference' then 
+	errors_3 = torch.load(errorFiles[3])
+else 
+	errors_3 = errors_1
+end
 
 errorInputSize = 4 -- N_11,N_00,N_10,N_01
 errorExtractor_12 = torch.BinaryTranslError(errorInputSize)
