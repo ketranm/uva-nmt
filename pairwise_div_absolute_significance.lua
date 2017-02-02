@@ -3,6 +3,7 @@ require 'nn'
 require 'cutorch'
 require 'cunn'
 local cfg = require 'pl.config'
+local hypothesis = 'absoluteDivergence'
 local opt_1 = cfg.read(arg[1]) -- sys_1 and sys_2
 
 function extractTypedErrors(errors1, errors2, reference,errorExtractors)
@@ -37,108 +38,87 @@ for eFile in string.gmatch(opt_1.ensembleErrorFiles,"[^%s]+") do
     table.insert(errorFiles,eFile)
 end
 
+
 local errors_1 = torch.load(errorFiles[1])
 local errors_2 = torch.load(errorFiles[2])
 
 
-
 errorInputSize = 4 -- N_11,N_00,N_10,N_01
---errorExtractor_11 =torch.BinaryTranslError(errorInputSize)
 
---compute statistics on actual set
+
+errorExtractor_12 = torch.BinaryTranslError(errorInputSize)
+
+--compute statistics on actual sets
 local reference = torch.load(opt_1.reference)
+local numRefTensors = #reference
 local vocab = torch.load(opt_1.trgVocFile)
 local targetVocIdx= {}
 local targetVocWords = {}
 for i,w in pairs(vocab[2].idx2word) do
-    table.insert(targetVocIdx,i)
-    targetVocWords[i] =w
+	table.insert(targetVocIdx,i)
+	targetVocWords[i] =w
 end
-local errorExtractor_12 = torch.NgramContextTranslError(targetVocIdx,{},4,errorInputSize)
-local numRefTensors = #reference
--- sys_1 and sys_2
+--		-- sys_1 and sys_2
 for i=1,numRefTensors do 
 	extractTypedErrors(errors_1[i]:double(),errors_2[i]:double(),reference[i][2],{errorExtractor_12}) 
---	extractTypedErrors(errors_1[i]:double(),errors_1[i]:double(),reference[i][2],{errorExtractor_11}) 
 end
 local statistics_12 = errorExtractor_12:computePairwiseStatistics()
---local statistics_11 = errorExtractor_11:computePairwiseStatistics()
 errorExtractor_12:reset()
-
-
-
-
-r = 1000 -- num of permutations
-c_1 = {}
-c_2 = {}
+r = 5000 -- num of permutations
+c = {}
 actual_stat_diff = {}
 for stat,_ in pairs(statistics_12[1]) do
-	c_1[stat] = 0 -- count of times random permuatation stats was higher than actual one
-	c_2[stat] = 0
-	actual_stat_diff[stat] = statistics_12[1][stat]
+	c[stat] = 0 -- count of times random permuatation stats was higher than actual one
 	print(stat)
-	print(actual_stat_diff[stat])
+	print(statistics_12[1][stat])
 end
 
-local errorExtractors_1rand = torch.NgramContextTranslError(targetVocIdx,{},2,errorInputSize)
-local errorExtractors_2rand = torch.NgramContextTranslError(targetVocIdx,{},2,errorInputSize)
+local intersect = {}
+for i=1,numRefTensors do
+	local e_1 = errors_1[i]
+	local e_2 = errors_2[i]
+	local inter = torch.eq(e_1,e_2)
+	intersect[i] = {}
+	for j=1,inter:size(1) do
+		for k=1,inter:size(2) do
+			if inter[j][k] == 0 then table.insert(intersect[i],{j,k}) end
+		end
+	end
+end 
 
 for iter=1,r do
 	print(iter)
-	errorExtractors_1rand:reset()	
-	errorExtractors_2rand:reset()	
+	errorExtractor_12:reset()
 	for i=1,numRefTensors do 
 		local curr_1 = errors_1[i]:clone()
 		local curr_2 = errors_2[i]:clone()
-		for j=1,curr_1:size(1) do
-			for k=1,curr_1:size(2) do
-				local swap_1 = torch.random(0,1) 
-				local swap_2 = torch.random(0,1)
-				if swap_1 == 1 then 
-					curr_1[j][k] = torch.abs(curr_1[j][k]-1) end
-				if swap_2 == 1 then curr_2[j][k] = torch.abs(curr_2[j][k]-1) end
+		for _,posit in ipairs(intersect[i]) do
+			local swap = torch.random(0,1) 
+			if swap == 1 then
+				local j = posit[1]
+				local k = posit[2] 
+				curr_1[j][k] = torch.abs(curr_1[j][k]-1)
+				curr_2[j][k] = torch.abs(curr_2[j][k]-1)
 			end
 		end
-		extractTypedErrors(errors_1[i]:double(),curr_2:double(),reference[i][2],{errorExtractors_1rand}) 
-		extractTypedErrors(errors_2[i]:double(),curr_1:double(),reference[i][2],{errorExtractors_2rand}) 
+		extractTypedErrors(curr_1:double(),curr_2:double(),reference[i][2],{errorExtractor_12}) 
 	end
-	local r_statistics_1 = errorExtractors_1rand:computePairwiseStatistics()
-	local r_statistics_2 = errorExtractors_2rand:computePairwiseStatistics()
-	for stat,r_val_1 in pairs(r_statistics_1[1]) do
---		local diff_1 = torch.abs(statistics_11[1][stat] - r_val_1)
---		print(diff_1)
-		--print(stat)
-		--print(r_val_1)
+	local r_statistics_12 = errorExtractor_12:computePairwiseStatistics()
+	for stat,r_val_12 in pairs(r_statistics_12[1]) do
 		if stat == 'disagreementMeasure' then
-			if r_val_1 >= actual_stat_diff[stat] then 
-				c_1[stat] = c_1[stat] + 1
-			end
-			if r_statistics_2[1][stat] >= actual_stat_diff[stat] then 
-				c_2[stat] = c_2[stat] + 1
-			end
-		else	
-		if r_val_1 <= actual_stat_diff[stat] then 
-			c_1[stat] = c_1[stat] + 1
+			if r_val_12 >= statistics_12[1][stat] then c[stat] = c[stat] + 1 end
+		else
 			print(stat)
-			print(r_val_1)
-		else 
-			print(stat)
-			print(r_val_1)
-		end
-		--local diff_2 = torch.abs(statistics_11[1][stat] - r_statistics_2[1][stat])
-		if r_statistics_2[1][stat] <= actual_stat_diff[stat] then 
-			c_2[stat] = c_2[stat] + 1
-		end
+			print(r_val_12)
+			if r_val_12 <= statistics_12[1][stat] then c[stat] = c[stat] + 1 end
 		end
 	end
 end
 
 
-for stat,c1 in pairs(c_1) do
-	local p_val_1 = c1/r
-	print(stat..'__1::'..p_val_1)
-	local p_val_2  = c_2[stat]/r
-	print(stat..'__2::'..p_val_2)
+for stat,c in pairs(c) do
+	local p_val = c/r
+	print(stat..'::'..p_val)
 end
 
 
