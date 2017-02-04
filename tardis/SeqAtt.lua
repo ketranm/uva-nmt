@@ -55,6 +55,12 @@ function NMT:type(type)
                                            self.layer)
 end
 
+
+function NMT:setType(type)
+    parent.type(self, type)
+end
+
+
 function NMT:reset()
     self.params:uniform(-0.1, 0.1)
 end
@@ -85,11 +91,16 @@ function NMT:forwardAndExtractErrors(input,target,errorFilters)
     return predictions:view(target:size(1),target:size(2)), errors
 end
 
+function NMT:extractPredictionErrors(target)
+    local _,predictions = self.logProb:topk(1,true)
+    local errors = torch.ne(predictions:view(target:size(1)),target)
+    return predictions:view(target:size(1)), errors
+end
 function NMT:backward(input, target)
     -- zero grad manually here
     self.gradParams:zero()
     local gradXent = self.criterion:backward(self.logProb, target:view(-1))
-
+    print(type(gradXent))
     local gradLayer = self.layer:backward({self.cntx, self.decOutput}, gradXent)
 
     local gradDecoder = gradLayer[2] -- grad to decoder

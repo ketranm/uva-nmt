@@ -1,9 +1,9 @@
 -- author: Ke Tran <m.k.tran@uva.nl>
-
 require 'tardis.GlimpseDot'
 require 'optim'
 require 'tardis.FastTransducer'
 require 'moses'
+require 'tardis.SeqAtt'
 local model_utils = require 'tardis.model_utils'
 
 local utils = require 'misc.utils'
@@ -59,7 +59,8 @@ function NMT:__init(opt)
 end
 
 function NMT:type(type)
-    parent.type(self, type)
+    self:setType(type)
+ --   parent.type(self, type)
     self.params, self.gradParams =
         model_utils.combine_all_parameters(self.encoder,
                                            self.decoder,
@@ -86,23 +87,25 @@ function NMT:forward(input, target)
     local logProb = self:stepDecoder(input[2]) -- TODO
     local confidScore = self:stepConfidencePred() --TODO
 
-    local _,errors = self:extractPredictionErrors(logProb,target)
-    self.errors = errors
+    local _,errors = self:extractPredictionErrors(target)
+    self.errors = errors:cuda()
     self.confidScore = confidScore
     local mainLoss =  self.criterion:forward(logProb, target)
-    local confidLoss = self.confidenceCriterion:forward(confidScore,errors)
-    return self.NLLweight * mainLoss + self.MSEweight * confidLoss
+    local confidLoss = self.confidenceCriterion:forward(confidScore,self.errors)
+    return mainLoss, confidLoss, self.NLLweight * mainLoss + self.MSEweight * confidLoss
 end
 
 
-function NMT:backward(input, target,errors)
+function NMT:backward(input, target)
     -- zero grad manually here
+    print(target:size())
     self.gradParams:zero()
-    local gradXent = self.NLLweight * self.criterion:backward(self.logProb, target:view(-1))
-    local gradMSE = self.MSEweight * self.confidenceCriterion:backward(self.confidScore,self.errors)
-
-    local gradOutputLayer = self.outputLayer:backward(self.hidLayerOut,gradXent)
-    local gradConfid = self.confidence:backward(self.hidLayerOut,gradMSE)    
+    local gradXent = torch.mul(self.criterion:backward(self.logProb, target:view(-1)),self.NLLweight)
+    --print(type(gradXent))
+    local gradMSE = torch.mul(self.confidenceCriterion:backward(self.confidScore,self.errors),self.MSEweight)
+    print(gradMSE:size())
+    local gradOutputLayer = self.outputLayer:backward(self.hidLayerOutput,gradXent)
+    local gradConfid = self.confidence:backward(self.hidLayerOutput,gradMSE)    
 
     local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, gradOutputLayer+gradConfid)
 
@@ -220,6 +223,8 @@ end
 function NMT:clearState()
     self.encoder:clearState()
     self.decoder:clearState()
-    self.layer:clearState()
+    self.hidLayer:clearState()
+    self.outputLayer:clearState()
     self.glimpse:clearState()
+    self.confidence:clearState()
 end
