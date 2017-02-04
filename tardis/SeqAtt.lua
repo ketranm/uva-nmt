@@ -80,10 +80,13 @@ end
 function NMT:forwardAndExtractErrors(input,target,errorFilters)
     self:stepEncoder(input[1])
     local logProb = self:stepDecoder(input[2])
-    local _,predictions = logProb:topk(1,true)
-    local errors = torch.ne(predictions:view(target:size(1),target:size(2)),target)
-    return predictions:view(target:size(1),target:size(2)), errors
+    local predictions, errors = self:extractPredictionErrors(logProb,target)
+    return predictions, errors
 end
+
+function NMT:extractCorrectPredictions(logProb,target)
+    local _,predictions = logProb:topk(1,true):view(target:size(1),target:size(2))
+    return predictions, torch.eq(predictions,target)
 
 function NMT:backward(input, target)
     -- zero grad manually here

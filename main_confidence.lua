@@ -56,18 +56,20 @@ function train()
         for i = 1, nbatches do
             local x, prev_y, next_y = prepro(loader:next())
             model:clearState()
-	    local mainLoss,confLoss,ave= model:forward({x, prev_y}, next_y)
-            nll = nll + mainLoss
-	    confidMSE = confidMSE + confLoss
-	    aveLoss = aveLoss + ave 
-            model:backward({x, prev_y}, next_y)
-            model:update(opt.learningRate)
-            nupdates = nupdates + 1
-            totwords = totwords + prev_y:numel()
+            local nll = model:optimize({x,prev_y},next_y)
+	        --local mainLoss,confLoss,ave= model:forward({x, prev_y}, next_y)
+            --nll = nll + mainLoss
+	       --confidMSE = confidMSE + confLoss
+	        --aveLoss = aveLoss + ave 
+            --model:backward({x, prev_y}, next_y)
+            --model:update(opt.learningRate)
+            --nupdates = nupdates + 1
+            --totwords = totwords + prev_y:numel()
             if i % opt.reportEvery == 0 then
                 local floatEpoch = (i / nbatches) + epoch - 1
-                local msg = 'epoch %.4f / %d   [ppl] %.4f [conf_mse] %.4f [ave_loss] %.4f  [speed] %.2f w/s [update] %.3f'
-                local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i),confidMSE/i,aveLoss/i, totwords / timer:time().real, nupdates/1000}
+                local msg = 'epoch %.4f / %d   [ppl] %.4f   [speed] %.2f w/s [update] %.3f' --'epoch %.4f / %d   [ppl] %.4f [conf_mse] %.4f [ave_loss] %.4f  [speed] %.2f w/s [update] %.3f'
+                --local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i),confidMSE/i,aveLoss/i, totwords / timer:time().real, nupdates/1000}
+                local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i), totwords / timer:time().real, nupdates/1000}
                 print(string.format(unpack(args)))
                 collectgarbage()
             end
