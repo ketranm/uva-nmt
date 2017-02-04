@@ -31,6 +31,8 @@ function NMT:__init(opt)
     self.hidLayer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
     self.hidLayer:add(nn.Tanh())
 
+    
+
     self.outputLayer = nn.Sequential()
     self.outputLayer:add(nn.Linear(hiddenSize, targetSize, true))
     self.outputLayer:add(nn.LogSoftMax())
@@ -41,6 +43,11 @@ function NMT:__init(opt)
     self.confidence:add(nn.Tanh())
     self.confidence:add(nn.Linear(confidenceHidSize,1))
     self.confidence:add(nn.Sigmoid())
+    
+    self.hidToObjectives = nn.ConcatTable()
+    self.hidToObjectives:add(self.outputLayer)
+    self.hidToObjectives:add(self.confidence)
+
     self.confidenceCriterion = nn.MSECriterion()
     self.MSEweight = opt.MSEweight
 
@@ -84,15 +91,18 @@ function NMT:forward(input, target)
     local target = target:view(-1)
     self:stepEncoder(input[1])
 
-    local logProb = self:stepDecoder(input[2]) -- TODO
-    local confidScore = self:stepConfidencePred() --TODO
+    self:stepDecoderUpToHidden(input[2])
+    local logProb,confidScore = self:predictMultiTask() 
 
-    local _,errors = self:extractPredictionErrors(target)
-    self.errors = errors:cuda()
+    --local logProb = self:stepDecoder(input[2])
+    --local confidScore = self:stepConfidencePred()
+
+    local _,correctPredictions = self:extractCorrectPredictions(logProb,target)
+    self.correctPredictions = correctPredictions
     self.confidScore = confidScore
     local mainLoss =  self.criterion:forward(logProb, target)
-    local confidLoss = self.confidenceCriterion:forward(confidScore,self.errors)
-    return mainLoss, confidLoss, self.NLLweight * mainLoss + self.MSEweight * confidLoss
+    local confidLoss = self.confidenceCriterion:forward(confidScore,correctPredictions)
+    return self.NLLweight * mainLoss + self.MSEweight * confidLoss
 end
 
 
@@ -139,7 +149,7 @@ function NMT:optimize(input, target)
         if self.params ~= x then
             self.params:copy(x)
         end
-        local f = self:forward(input, target)
+        local f_main,f_conf = self:forward(input, target)
         self:backward(input, target)
         local gradNorm = self.gradParams:norm()
         -- clip gradient
@@ -207,6 +217,23 @@ function NMT:stepDecoder(x)
     -- update prevStates
     self.prevStates = self.decoder:lastStates()
     return self.logProb
+end
+
+function NMT:stepDecoderUpToHidden(x)
+    self.decoder:setStates(self.prevStates)
+    self.decOutput = self.decoder:forward(x)
+    self.cntx = self.glimpse:forward{self.encOutput, self.decOutput}
+    self.hidLayerOutput = self.hidLayer:forward{self.cntx, self.decOutput}
+    -- update prevStates
+    self.prevStates = self.decoder:lastStates()
+    return self.logProb
+end
+
+function NMT:predictMultiTask()
+    local logProb,conf =  self.hidToObjectives:forward(self.hidLayerOutput)
+    self.logProb = logProb
+    self.confidenceScore = conf
+    return self.logProb, self.confidenceScore
 end
 
 function NMT:stepConfidencePred()
