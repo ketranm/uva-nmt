@@ -40,7 +40,7 @@ function NMT:__init(opt)
 
     self.maxNorm = opt.maxNorm or 5
     -- for optim
-    self.optimConfig = {}
+    self.optimConfig = {learningRate = 0.0002, beta1 = 0.9, beta2 = 0.999}
     self.optimStates = {}
 
     --self:reset()
