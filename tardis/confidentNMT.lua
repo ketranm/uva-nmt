@@ -59,7 +59,7 @@ function NMT:__init(opt)
     self.NLLweight = opt.NLLweight
     self.maxNorm = opt.maxNorm or 5
     -- for optim
-    self.optimConfig = {}
+    self.optimConfig = {learningRate = 0.0002, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0}
     self.optimStates = {}
 
     --self:reset()
@@ -95,23 +95,22 @@ function NMT:forward(input, target)
     self:predictMultiTask() 
     --local logProb = self:stepDecoder(input[2])
     --local confidScore = self:stepConfidencePred()
-
     local correctPredictions = self:extractCorrectPredictions(self.logProb,target)
     self.correctPredictions = correctPredictions:cuda()
-    local mainLoss =  self.criterion:forward(self.logProb, target)
-    local confidLoss = self.confidenceCriterion:forward(self.confidScore,self.correctPredictions)
-    return self.NLLweight * mainLoss + self.MSEweight * confidLoss
+    local mainLoss = self.criterion:forward(self.logProb,target) 
+    confidLoss = self.confidenceCriterion:forward(self.confidScore,self.correctPredictions)
+    self.confidLoss = confidLoss
+    return mainLoss 
 end
 
 
 function NMT:backward(input, target)
     -- zero grad manually here
-    print(target:size())
     self.gradParams:zero()
-    local gradXent = self.criterion:backward(self.logProb, target:view(-1)-- torch.mul(),self.NLLweight)
-    local gradMSE = self.confidenceCriterion:backward(self.confidScore,self.errors)--torch.mul(,self.MSEweight)
+    local gradXent = self.criterion:backward(self.logProb, target:view(-1))-- torch.mul(),self.NLLweight)
+    local gradMSE = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions)--torch.mul(,self.MSEweight)
     
-    local gradMultiTask = self.hidToObjectives:backward(self.hidLayerOutput,{gradXent,gradMSE)
+    local gradMultiTask = self.hidToObjectives:backward(self.hidLayerOutput,{gradXent,gradMSE})
     local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, gradMultiTask)
 
     local gradDecoder = gradHidLayer[2] -- grad to decoder
@@ -139,23 +138,6 @@ function NMT:update(learningRate)
     self.params:add(self.gradParams:mul(-scale)) -- do it in-place
 end
 
-function NMT:optimize(input, target)
-    local feval = function(x)
-        if self.params ~= x then
-            self.params:copy(x)
-        end
-        local f_main,f_conf = self:forward(input, target)
-        self:backward(input, target)
-        local gradNorm = self.gradParams:norm()
-        -- clip gradient
-        if gradNorm > self.maxNorm then
-            self.gradParams:mul(self.maxNorm / gradNorm)
-        end
-        return f, self.gradParams
-    end
-    local _, fx = optim.adam(feval, self.params, self.optimConfig, self.optimStates)
-    return fx[1]
-end
 
 function NMT:parameters()
     return self.params
@@ -249,4 +231,5 @@ function NMT:clearState()
     self.outputLayer:clearState()
     self.glimpse:clearState()
     self.confidence:clearState()
+    self.hidToObjectives:clearState()
 end
