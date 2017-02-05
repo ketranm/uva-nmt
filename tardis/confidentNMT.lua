@@ -92,16 +92,14 @@ function NMT:forward(input, target)
     self:stepEncoder(input[1])
 
     self:stepDecoderUpToHidden(input[2])
-    local logProb,confidScore = self:predictMultiTask() 
-
+    self:predictMultiTask() 
     --local logProb = self:stepDecoder(input[2])
     --local confidScore = self:stepConfidencePred()
 
-    local _,correctPredictions = self:extractCorrectPredictions(logProb,target)
-    self.correctPredictions = correctPredictions
-    self.confidScore = confidScore
-    local mainLoss =  self.criterion:forward(logProb, target)
-    local confidLoss = self.confidenceCriterion:forward(confidScore,correctPredictions)
+    local correctPredictions = self:extractCorrectPredictions(self.logProb,target)
+    self.correctPredictions = correctPredictions:cuda()
+    local mainLoss =  self.criterion:forward(self.logProb, target)
+    local confidLoss = self.confidenceCriterion:forward(self.confidScore,self.correctPredictions)
     return self.NLLweight * mainLoss + self.MSEweight * confidLoss
 end
 
@@ -230,9 +228,9 @@ function NMT:stepDecoderUpToHidden(x)
 end
 
 function NMT:predictMultiTask()
-    local logProb,conf =  self.hidToObjectives:forward(self.hidLayerOutput)
-    self.logProb = logProb
-    self.confidenceScore = conf
+    local outputTable =  self.hidToObjectives:forward(self.hidLayerOutput)
+    self.logProb = outputTable[1] 
+    self.confidScore = outputTable[2]
     return self.logProb, self.confidenceScore
 end
 

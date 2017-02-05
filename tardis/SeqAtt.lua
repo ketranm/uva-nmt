@@ -91,9 +91,9 @@ function NMT:forwardAndExtractErrors(input,target,errorFilters)
 end
 
 function NMT:extractCorrectPredictions(logProb,target)
-    local _,predictions = logProb:topk(1,true):view(target:size(1),target:size(2))
-    return predictions, torch.eq(predictions,target)
-
+    local bla,predictions = logProb:topk(1,true)
+    return torch.eq(predictions,target)
+end
 function NMT:backward(input, target)
     -- zero grad manually here
     self.gradParams:zero()
