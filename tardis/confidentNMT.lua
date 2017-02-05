@@ -108,14 +108,11 @@ function NMT:backward(input, target)
     -- zero grad manually here
     print(target:size())
     self.gradParams:zero()
-    local gradXent = torch.mul(self.criterion:backward(self.logProb, target:view(-1)),self.NLLweight)
-    --print(type(gradXent))
-    local gradMSE = torch.mul(self.confidenceCriterion:backward(self.confidScore,self.errors),self.MSEweight)
-    print(gradMSE:size())
-    local gradOutputLayer = self.outputLayer:backward(self.hidLayerOutput,gradXent)
-    local gradConfid = self.confidence:backward(self.hidLayerOutput,gradMSE)    
-
-    local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, gradOutputLayer+gradConfid)
+    local gradXent = self.criterion:backward(self.logProb, target:view(-1)-- torch.mul(),self.NLLweight)
+    local gradMSE = self.confidenceCriterion:backward(self.confidScore,self.errors)--torch.mul(,self.MSEweight)
+    
+    local gradMultiTask = self.hidToObjectives:backward(self.hidLayerOutput,{gradXent,gradMSE)
+    local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, gradMultiTask)
 
     local gradDecoder = gradHidLayer[2] -- grad to decoder
     local gradGlimpse =
