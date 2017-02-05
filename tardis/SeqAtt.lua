@@ -141,7 +141,7 @@ function NMT:optimize(input, target)
         return f, self.gradParams
     end
     local _, fx = optim.adam(feval, self.params, self.optimConfig, self.optimStates)
-    return fx[1]
+    return fx[1],self.confidLoss
 end
 
 function NMT:parameters()
