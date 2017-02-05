@@ -31,7 +31,6 @@ function NMT:__init(opt)
     self.hidLayer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
     self.hidLayer:add(nn.Tanh())
 
-    
 
     self.outputLayer = nn.Sequential()
     self.outputLayer:add(nn.Linear(hiddenSize, targetSize, true))
@@ -63,6 +62,24 @@ function NMT:__init(opt)
     self.optimStates = {}
 
     --self:reset()
+end
+
+function NMT:loadModelWithoutConfidence(model)
+    self.encoder = model.encoder
+    self.decoder = model.decoder
+    self.glimpse = model.glimpse
+
+    local hidLayer = nn.Sequential()
+    hidLayer:add(model.layer(1))
+    hidLayer:add(model.layer(2))
+    hidLayer:add(model.layer(3))
+    hidLayer:add(model.layer(4))
+    self.hidLayer = hidLayer
+
+    local outputLayer = nn.Sequential()
+    outputLayer:add(model.layer(5))
+    outputLayer:add(model.layer(6))
+    self.outputLayer = outputLayer
 end
 
 function NMT:type(type)
@@ -249,4 +266,5 @@ function NMT:clearState()
     self.outputLayer:clearState()
     self.glimpse:clearState()
     self.confidence:clearState()
+    self.hidToObjectives:clearState()
 end
