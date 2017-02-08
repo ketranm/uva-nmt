@@ -221,14 +221,8 @@ function NMT:stepDecoder(x)
     Return:
     - `logProb` : cross entropy loss of the sequence
     --]]
-    self.decoder:setStates(self.prevStates)
-    self.decOutput = self.decoder:forward(x)
-    self.cntx = self.glimpse:forward{self.encOutput, self.decOutput}
-    self.hidLayerOutput = self.hidLayer:forward{self.cntx, self.decOutput}
-    self.logProb = self.outputLayer:forward(self.hidLayerOutput)
-
-    -- update prevStates
-    self.prevStates = self.decoder:lastStates()
+    self.stepDecoderUpToHidden(x)
+    self:predictMultiTask() 
     return self.logProb
 end
 
@@ -239,7 +233,6 @@ function NMT:stepDecoderUpToHidden(x)
     self.hidLayerOutput = self.hidLayer:forward{self.cntx, self.decOutput}
     -- update prevStates
     self.prevStates = self.decoder:lastStates()
-    return self.logProb
 end
 
 function NMT:predictMultiTask()
