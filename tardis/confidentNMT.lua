@@ -12,6 +12,7 @@ local NMT, parent = torch.class('nn.confidentNMT', 'nn.NMT')
 
 function NMT:__init(opt)
     -- build encoder
+    self.trainingScenario = opt.trainingScenario
     local sourceSize = opt.sourceSize
     local inputSize = opt.inputSize
     local hiddenSize = opt.hiddenSize
@@ -30,21 +31,22 @@ function NMT:__init(opt)
     self.hidLayer:add(nn.View(-1, 2 * hiddenSize))
     self.hidLayer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
     self.hidLayer:add(nn.Tanh())
-
-    self.outputLayer = nn.Sequential()
-    self.outputLayer:add(nn.Linear(hiddenSize, targetSize, true))
-    self.outputLayer:add(nn.LogSoftMax())
-
+	 
     self.confidence = nn.Sequential()
     self.confidence:add(nn.Linear(hiddenSize,confidenceHidSize))
     self.confidence:add(nn.Tanh())
     self.confidence:add(nn.Linear(confidenceHidSize,1))
     self.confidence:add(nn.Sigmoid())
+    if self.trainingScenario ~= 'confidenceMechanism' then
+    self.outputLayer = nn.Sequential()
+    self.outputLayer:add(nn.Linear(hiddenSize, targetSize, true))
+    self.outputLayer:add(nn.LogSoftMax())
+
     
     self.hidToObjectives = nn.ConcatTable()
     self.hidToObjectives:add(self.outputLayer)
     self.hidToObjectives:add(self.confidence)
-
+    end
     self.confidenceCriterion = nn.MSECriterion()
     self.MSEweight = opt.MSEweight
 
@@ -66,25 +68,37 @@ end
 
 
 function NMT:loadModelWithoutConfidence(model)
-    self.encoder = model.encoder:clone()
-    self.decoder = model.decoder:clone()
-    self.glimpse = model.glimpse:clone()
+    self.encoder= model.encoder
+    print(self.encoder == model.encoder)
+    self.decoder= model.decoder
     local hidLayer = nn.Sequential()
     hidLayer:add(model.layer:get(1):clone())
     hidLayer:add(model.layer:get(2):clone())
     hidLayer:add(model.layer:get(3):clone())
     hidLayer:add(model.layer:get(4):clone())
     self.hidLayer = hidLayer
-
+    if self.trainingScenario ~= 'confidenceMechanism' then
     local outputLayer = nn.Sequential()
-    outputLayer:add(model.layer:get(5))
-    outputLayer:add(model.layer:get(6))
-    self.outputLayer = outputLayer
+    outputLayer:add(model.layer:get(5):clone())
+    outputLayer:add(model.layer:get(6):clone())
+    print(self.hidToObjectives:get(1))
+    self.hidToObjectives = nn.ConcatTable()
+    self.hidToObjectives:add(outputLayer)
+    self.hidToObjectives:add(self.confidence)
+    end
 end
 
 function NMT:type(type)
     self:setType(type)
  --   parent.type(self, type)
+    if self.trainingScenario == 'confidenceMechanism' then
+    self.params, self.gradParams =
+        model_utils.combine_all_parameters(self.encoder,
+                                           self.decoder,
+                                           self.glimpse,
+                                           self.hidLayer,
+                                           self.confidence)
+    else	
     self.params, self.gradParams =
         model_utils.combine_all_parameters(self.encoder,
                                            self.decoder,
@@ -92,6 +106,7 @@ function NMT:type(type)
                                            self.hidLayer,
                                            self.outputLayer,
                                            self.confidence)
+   end
 end
 
 
@@ -110,20 +125,23 @@ function NMT:forward(input, target)
 
     self:stepDecoderUpToHidden(input[2])
     self:predictMultiTask() 
-    --local logProb = self:stepDecoder(input[2])
-    --local confidScore = self:stepConfidencePred()
     local correctPredictions = self:extractCorrectPredictions(self.logProb,target)
     self.correctPredictions = correctPredictions:cuda()
     local mainLoss = self.criterion:forward(self.logProb,target)
-    --confidLoss = self.confidenceCriterion:forward(self.confidScore,self.correctPredictions)
-    --self.confidLoss = confidLoss
-    return mainLoss 
+    confidLoss = self.confidenceCriterion:forward(self.confidScore,self.correctPredictions)
+    self.confidLoss = confidLoss
+    return mainLoss,self.confidLoss 
 end
 
 
 function NMT:backward(input, target)
     -- zero grad manually here
     self.gradParams:zero()
+    if self.trainingScenario == 'confidenceMechanism' then
+	local gradMSE = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions):cuda()
+	print(gradMSE:size())
+	self.confidence:backward(self.hidLayerOuput,gradMSE)
+    else
     if self.adaptive then 
     local gradXent = torch.mul(self.criterion:backward(self.logProb, target:view(-1)),self.NLLweight)
     local gradMSE = torch.mul(self.confidenceCriterion:backward(self.confidScore,self.correctPredictions),self.MSEweight)
@@ -167,15 +185,7 @@ function NMT:backward(input, target)
     local gradEncoder = gradGlimpse[1]
     self.encoder:backward(input[1], gradEncoder)
     end
-end
-
-function NMT:update(learningRate)
-    local gradNorm = self.gradParams:norm()
-    local scale = learningRate
-    if gradNorm > self.maxNorm then
-        scale = scale * self.maxNorm / gradNorm
     end
-    self.params:add(self.gradParams:mul(-scale)) -- do it in-place
 end
 
 
@@ -204,6 +214,7 @@ function NMT:stepEncoder(x)
     Parameters:
     - `x` : source tensor, can be a matrix (batch)
     --]]
+    print('TTT')
     self.encOutput = self.encoder:forward(x)
     self.prevStates = self.encoder:lastStates()
     return self.encOutput
@@ -221,7 +232,7 @@ function NMT:stepDecoder(x)
     Return:
     - `logProb` : cross entropy loss of the sequence
     --]]
-    self.stepDecoderUpToHidden(x)
+    self:stepDecoderUpToHidden(x)
     self:predictMultiTask() 
     return self.logProb
 end
@@ -247,11 +258,6 @@ function NMT:stepConfidencePred()
     return self.confidenceScore
 end
 
-function NMT:indexStates(index)
-    self.encOutput = self.encOutput:index(1, index)
-    self.decoder:indexStates(index)
-    self.prevStates = self.decoder:lastStates()
-end
 
 function NMT:clearState()
     self.encoder:clearState()
