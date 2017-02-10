@@ -18,7 +18,6 @@ function NMT:__init(opt)
     local hiddenSize = opt.hiddenSize
     local confidenceHidSize = opt.confidenceHidSize 
     self.encoder = nn.Transducer(sourceSize, inputSize, hiddenSize, opt.numLayers, opt.dropout)
-
     -- build decoder
     local targetSize = opt.targetSize
     self.decoder = nn.Transducer(targetSize, inputSize, hiddenSize, opt.numLayers, opt.dropout)
@@ -39,7 +38,7 @@ function NMT:__init(opt)
     self.confidence:add(nn.Sigmoid())
     self.confidenceCriterion = nn.MSECriterion()
     self.MSEweight = opt.MSEweight
-
+    
     self.outputLayer = nn.Sequential()
     self.outputLayer:add(nn.Linear(hiddenSize, targetSize, true))
     self.outputLayer:add(nn.LogSoftMax())
@@ -52,7 +51,7 @@ function NMT:__init(opt)
     self.padIdx = opt.padIdx
     self.maxNorm = opt.maxNorm or 5
     -- for optim
-    self.optimConfig = {learningRate = 0.0002, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0.0001}
+    self.optimConfig = {learningRate = 0.002, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0.0001}
     self.optimStates = {}
 
 end
@@ -76,7 +75,7 @@ function NMT:loadModelWithoutConfidence(model)
 end
 
 function NMT:type(type)
-    self:setType(type)
+    self:setType(type) 
     self.params, self.gradParams =
         model_utils.combine_all_parameters(self.encoder,
                                            self.decoder,
@@ -107,7 +106,7 @@ function NMT:forward(input, target)
     self.correctPredictions = correctPredictions:cuda()
     local mainLoss = self.criterion:forward(self.logProb,target)
     confidLoss = self.confidenceCriterion:forward(self.confidScore,self.correctPredictions)
-
+    self.confidLoss = confidLoss
     return mainLoss,confidLoss 
 end
 
@@ -115,10 +114,10 @@ end
 function NMT:backward(input, target)
     -- zero grad manually here
     self.gradParams:zero()
-    local gradMSE = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions):cuda()
-    local gradConfid = self.confidence:backward(self.hidLayerOuput,gradMSE)
+    local gradMSE = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions)
+    local gradConfid = self.confidence:backward(self.hidLayerOutput,gradMSE)
     if self.trainingScenario ~= 'confidenceMechanism' then
-	   local gradXent = self.criterion:backward(self.logProb, target:view(-1))
+       local gradXent = self.criterion:backward(self.logProb, target:view(-1))
        local gradOutputLayer = self.outputLayer:backward(self.hidLayerOutput,gradXent)
        local multiObjectiveGrad = torch.mul(gradOutputLayer,self.NLLweight):add(torch.mul(gradConfid,self.MSEweight))
        local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, multiObjectiveGrad)
@@ -151,8 +150,14 @@ end
 
 
 function NMT:stepConfidencePred()
-    self.confidenceScore = self.confidence:forward(self.hidLayerOutput)
-    return self.confidenceScore
+    self.confidScore = self.confidence:forward(self.hidLayerOutput)
+    return self.confidScore
+end
+
+function NMT:predictTargetLabel()
+    local logProb = self.outputLayer:forward(self.hidLayerOutput)
+    self.logProb = logProb
+    return self.logProb
 end
 
 
@@ -163,4 +168,15 @@ function NMT:clearState()
     self.outputLayer:clearState()
     self.glimpse:clearState()
     self.confidence:clearState()
+    self.logProb = nil
+    self.confidScore = nil
+    self.hidLayerOutput = nil
+end
+
+function NMT:save(fileName)
+    if self.trainingScenario == 'attentionMechanism' then
+	torch.save(filename,self.confidence)
+    else
+    torch.save(fileName, self.params)
+    end
 end
