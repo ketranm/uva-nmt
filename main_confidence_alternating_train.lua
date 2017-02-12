@@ -55,8 +55,16 @@ function train()
     local nupdates = 0
     for epoch = 1, opt.maxEpoch do
         loader:train()
-        model:evaluate()
-        model.confidence:training()
+	local training = 'confidence' 
+        if i % 2 == 1 then 
+		model:evaluate()
+		model.confidence:training()
+    	else 
+		training = 'NMT'
+		model:training()
+        	model.confidence:evaluate()
+	end
+	print('training model: '..training)
         local nll = 0
  	local confidMSE = 0
 	local aveLoss = 0 
@@ -68,7 +76,7 @@ function train()
         for i = 1, nbatches do
             local x, prev_y, next_y = prepro(loader:next())
             model:clearState()
-	    local new_nll,confidLoss = model:optimize({x,prev_y},next_y)
+	    local new_nll,confidLoss = model:optimize({x,prev_y},next_y,training)
 	    --local new_nll,confidLoss = model:forward({x,prev_y},next_y)
 	    --model:backward({x,prev_y},next_y)
  	    --model:update(opt.learningRate)
