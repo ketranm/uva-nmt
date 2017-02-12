@@ -154,6 +154,10 @@ function NMT:stepConfidencePred()
     return self.confidScore
 end
 
+function NMT:extractConfidenceScores()
+    return self.confidScore
+end
+
 function NMT:predictTargetLabel()
     local logProb = self.outputLayer:forward(self.hidLayerOutput)
     self.logProb = logProb
