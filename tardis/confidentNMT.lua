@@ -187,7 +187,7 @@ end
 
 function NMT:save(fileName)
     if self.trainingScenario == 'confidenceMechanism' then
-	torch.save(filename,self.confidence)
+	torch.save(fileName,self.confidence)
     else
     torch.save(fileName, self.params)
     end
