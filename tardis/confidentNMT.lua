@@ -32,8 +32,10 @@ function NMT:__init(opt)
     self.hidLayer:add(nn.Tanh())
 	 
     self.confidence = nn.Sequential()
+    self.confidence:add(nn.Dropout(0.2))
     self.confidence:add(nn.Linear(hiddenSize,confidenceHidSize))
     self.confidence:add(nn.Tanh())
+    self.confidence:add(nn.Dropout(0.2))
     self.confidence:add(nn.Linear(confidenceHidSize,1))
     self.confidence:add(nn.Sigmoid())
     self.confidenceCriterion = nn.MSECriterion()
@@ -51,7 +53,7 @@ function NMT:__init(opt)
     self.padIdx = opt.padIdx
     self.maxNorm = opt.maxNorm or 5
     -- for optim
-    self.optimConfig = {learningRate = 0.002, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0.0001}
+    self.optimConfig = {learningRate = 0.0002, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0.0001}
     self.optimStates = {}
 
 end
@@ -85,7 +87,11 @@ function NMT:type(type)
                                            self.confidence)
 end
 
-
+function NMT:load(fileName)
+    local params = torch.load(fileName)
+    self.params:copy(params)
+end
+    
 function NMT:forward(input, target)
     --[[ Forward pass of NMT
 
@@ -111,17 +117,22 @@ function NMT:forward(input, target)
 end
 
 
-function NMT:backward(input, target)
+function NMT:backward(input, target,mode)
     -- zero grad manually here
     self.gradParams:zero()
-    local gradMSE = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions)
-    local gradConfid = self.confidence:backward(self.hidLayerOutput,gradMSE)
-    if self.trainingScenario ~= 'confidenceMechanism' then
+    if (mode == nil and self.trainingScenario == 'confidenceMechanism') or mode == 'confidence' then
+    	local gradMSE = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions)
+    	local gradConfid = self.confidence:backward(self.hidLayerOutput,gradMSE)
+    else
        local gradXent = self.criterion:backward(self.logProb, target:view(-1))
        local gradOutputLayer = self.outputLayer:backward(self.hidLayerOutput,gradXent)
-       local multiObjectiveGrad = torch.mul(gradOutputLayer,self.NLLweight):add(torch.mul(gradConfid,self.MSEweight))
-       local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, multiObjectiveGrad)
-
+	local gradHidLayer = nil
+       if self.trainingScenario ~= 'confidenceMechanism' then
+       		local multiObjectiveGrad = torch.mul(gradOutputLayer,self.NLLweight):add(torch.mul(gradConfid,self.MSEweight))
+       		local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, multiObjectiveGrad)
+	else if mode == 'NMT' then
+		local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, gradOutputLayer)
+	end
         local gradDecoder = gradHidLayer[2] -- grad to decoder
         local gradGlimpse =
             self.glimpse:backward({self.encOutput, self.decOutput}, gradHidLayer[1])
@@ -135,6 +146,7 @@ function NMT:backward(input, target)
         -- backward to encoder
         local gradEncoder = gradGlimpse[1]
         self.encoder:backward(input[1], gradEncoder)
+    end
     end
 end
 
@@ -178,7 +190,7 @@ function NMT:clearState()
 end
 
 function NMT:save(fileName)
-    if self.trainingScenario == 'attentionMechanism' then
+    if self.trainingScenario == 'confidenceMechanism' then
 	torch.save(filename,self.confidence)
     else
     torch.save(fileName, self.params)
