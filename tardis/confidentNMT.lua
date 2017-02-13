@@ -40,7 +40,7 @@ function NMT:__init(opt)
     self.confidence:add(nn.Sigmoid())
     if opt.confidCriterion == 'MSE' then
         self.confidenceCriterion = nn.MSECriterion()
-    else if opt.confidenceCriterion == 'mixtureCrossEnt' then
+    elseif opt.confidenceCriterion == 'mixtureCrossEnt' then
         self.confidenceCriterion = nn.ClassNLLCriterion()
     end
     self.confidCriterion = opt.confidCriterion
@@ -121,7 +121,7 @@ function NMT:forward(input, target)
         local correctPredictions = self:extractCorrectPredictions(self.logProb,target)
         --self.correctPredictions = correctPredictions:cuda()
         self.confidLoss = self.confidenceCriterion:forward(self.confidScore,self.correctPredictions)
-    else if self.confidCriterion == 'mixtureCrossEnt' then
+    elseif self.confidCriterion == 'mixtureCrossEnt' then
         local oracleMixtureDistr = computeOracleMixtureDistr(self.confidScore,self.logProb,target)
         self.oracleMixtureDistr = oracleMixtureDistr
         self.confidLoss = self.confidCriterion:forward(oracleMixtureDistr,target)
@@ -147,7 +147,7 @@ function NMT:backward(input, target,mode)
         local gradConfidCriterion = nil
         if self.confidCriterion == 'MSE' then 
             gradConfidCriterion = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions)
-        else if self.confidCriterion == 'mixtureCrossEnt' then
+        elseif self.confidCriterion == 'mixtureCrossEnt' then
             gradConfidCriterion = self.confidenceCriterion:backward(self.oracleMixtureDistr,logProb)
         end
         local gradConfid = self.confidence:backward(self.hidLayerOutput,gradConfidCriterion)
@@ -158,7 +158,7 @@ function NMT:backward(input, target,mode)
        if self.trainingScenario ~= 'confidenceMechanism' then
        		local multiObjectiveGrad = torch.mul(gradOutputLayer,self.NLLweight):add(torch.mul(gradConfid,self.MSEweight))
        		local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, multiObjectiveGrad)
-	    else if mode == 'NMT' then
+	    elseif mode == 'NMT' then
 		  local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, gradOutputLayer)
 	   end
         local gradDecoder = gradHidLayer[2] -- grad to decoder
