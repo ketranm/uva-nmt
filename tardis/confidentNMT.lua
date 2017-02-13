@@ -4,6 +4,7 @@ require 'optim'
 require 'tardis.FastTransducer'
 require 'moses'
 require 'tardis.SeqAtt'
+require 'tardis.Confidence'
 local model_utils = require 'tardis.model_utils'
 
 local utils = require 'misc.utils'
@@ -30,21 +31,9 @@ function NMT:__init(opt)
     self.hidLayer:add(nn.View(-1, 2 * hiddenSize))
     self.hidLayer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
     self.hidLayer:add(nn.Tanh())
-	 
-    self.confidence = nn.Sequential()
-    self.confidence:add(nn.Dropout(0.2))
-    self.confidence:add(nn.Linear(hiddenSize,confidenceHidSize))
-    self.confidence:add(nn.Tanh())
-    self.confidence:add(nn.Dropout(0.2))
-    self.confidence:add(nn.Linear(confidenceHidSize,1))
-    self.confidence:add(nn.Sigmoid())
-    if opt.confidCriterion == 'MSE' then
-        self.confidenceCriterion = nn.MSECriterion()
-    elseif opt.confidCriterion == 'mixtureCrossEnt' then
-        self.confidenceCriterion = nn.ClassNLLCriterion()
-    end
-    self.confidCriterionType = opt.confidCriterion
-    self.MSEweight = opt.MSEweight
+	
+    self.confidence = nn.Confidence(hiddenSize,confidenceHidSize,opt.confidCriterion)
+    self.confidWeight = opt.confidWeight
     
     self.outputLayer = nn.Sequential()
     self.outputLayer:add(nn.Linear(hiddenSize, targetSize, true))
@@ -100,84 +89,42 @@ function NMT:load(fileName)
 end
     
 function NMT:forward(input, target)
-    --[[ Forward pass of NMT
-
-    Parameters:
-    - `input` : table of source and target tensor
-    - `target` : a tensor of next words
-
-    Return:
-    - `logProb` : negative log-likelihood of the mini-batch
-    --]]
     local target = target:view(-1)
     self:stepEncoder(input[1])
     self:stepDecoderUpToHidden(input[2])
     self:predictTargetLabel()
-    self:stepConfidencePred()
-    
     local mainLoss = self.criterion:forward(self.logProb,target)
-    self.confidLoss = nil
-    if self.confidCriterionType == 'MSE' then 
-        local correctPredictions = self:extractCorrectPredictions(self.logProb,target)
-        self.correctPredictions = correctPredictions:cuda()
-        self.confidLoss = self.confidenceCriterion:forward(self.confidScore,self.correctPredictions)
-    elseif self.confidCriterionType == 'mixtureCrossEnt' then
-        local oracleMixtureDistr = computeOracleMixtureDistr(self.confidScore,self.logProb,target)
-        self.oracleMixtureDistr = oracleMixtureDistr
-        self.confidLoss = self.confidenceCriterion:forward(oracleMixtureDistr,target)
-    end
+    local confidLoss = self.confidence:forwardLoss(self.hidLayerOutput,self.logProb,target)
+    self.confidLoss = confidLoss
+   
     return mainLoss,self.confidLoss 
 end
 
-function computeOracleMixtureDistr(weight,logProb,target)
-    local logWeight = torch.log(weight):expandAs(logProb) -- tensor
-    local logSecondWeight = torch.log(1 - weight)
-    local result = logProb + logWeight
-    for i=1,target:size(1) do
-        local orig = result[i][target[i]]
-        result[i][target[i]] = orig + torch.log(1+ torch.exp(logSecondWeight[i] - orig))
-    end
-    return result
-end
+
 
 function NMT:backward(input, target,mode)
     -- zero grad manually here
     self.gradParams:zero()
-    local gradOuputLayer = nil
-    local gradHidLayer = nil
-    if (mode == nil and self.trainingScenario == 'confidenceMechanism') or mode == 'confidence' then
-        local gradConfidCriterion = nil
-        if self.confidCriterionType == 'MSE' then 
-            gradConfidCriterion = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions)
-        elseif self.confidCriterionType == 'mixtureCrossEnt' then
-            gradConfidCriterion = self.confidenceCriterion:backward(self.oracleMixtureDistr,target:view(-1))
-        end
-        local gradConfid = self.confidence:backward(self.hidLayerOutput,gradConfidCriterion)
-	--rint('ALB')
-	--print(gradConfidCriterion)
-    else
-       local gradXent = self.criterion:backward(self.logProb, target:view(-1))
-	--print('BLA')
-	--print(gradXent)
-       gradOutputLayer = self.outputLayer:backward(self.hidLayerOutput,gradXent)
+    local hidLayerGradOutput = nil
+    if self.trainingScenario == 'confidenceMechanism' or (self.trainingScenario == 'alternating' and mode == 'confidence' then
+        hidLayerGradOutput = self.confidence:backward(self.hidLayerOutput,target)
+    elseif self.trainingScenario == 'alternating' and mode == 'NMT' then
+        local gradXent = self.criterion:backward(self.logProb, target:view(-1))
+        hidLayerGradOutput = self.outputLayer:backward(self.hidLayerOutput,gradXent)
+    elseif self.trainingScenario == 'joint' then
+        local gradConfid = self.confidence:backward(self.hidLayerOutput,target)
+        local gradOutputLayer = self.outputLayer:backward(self.hidLayerOutput,gradXent)
+        hidLayerGradOutput =  torch.mul(gradOutputLayer,self.NLLweight):add(torch.mul(gradConfid,self.confidWeight))
     end
 
-       if self.trainingScenario ~= 'confidenceMechanism' or mode == 'NMT' then
-	if self.trainingScenario ~= 'confidenceMechanism'  then
-       		local multiObjectiveGrad = torch.mul(gradOutputLayer,self.NLLweight):add(torch.mul(gradConfid,self.MSEweight))
-       		gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, multiObjectiveGrad)
-        elseif mode == 'NMT' then
-		
-		gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, gradOutputLayer:cuda())
-	end
-	
-        local gradDecoder = gradHidLayer[2]:cuda() -- grad to decoder
+    --backpropagate further if we dont just train the confidence mechanism
+    if self.trainingScenario == 'alternating' or self.trainingScenario == 'joint' then
+        local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, hidLayerGradOutput)	
+        local gradDecoder = gradHidLayer[2]-- grad to decoder
         local gradGlimpse =
             self.glimpse:backward({self.encOutput, self.decOutput}, gradHidLayer[1])
-
         gradDecoder:add(gradGlimpse[2]) -- accumulate gradient in-place
         self.decoder:backward(input[2], gradDecoder)
-
         -- initialize gradient from decoder
         local gradStates = self.decoder:gradStates()
         self.encoder:setGradStates(gradStates)
@@ -197,11 +144,6 @@ function NMT:stepDecoderUpToHidden(x)
     self.prevStates = self.decoder:lastStates()
 end
 
-
-function NMT:stepConfidencePred()
-    self.confidScore = self.confidence:forward(self.hidLayerOutput)
-    return self.confidScore
-end
 
 function NMT:extractConfidenceScores()
     return self.confidScore
