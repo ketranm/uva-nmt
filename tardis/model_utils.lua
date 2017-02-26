@@ -55,7 +55,6 @@ function model_utils.combine_all_parameters(...)
 
         local flatParameters = Tensor(nParameters):fill(1)
         local flatStorage = flatParameters:storage()
-
         for k = 1,#parameters do
             local storageOffset = storageInSet(storages, parameters[k]:storage())
             parameters[k]:set(flatStorage,

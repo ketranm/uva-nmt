@@ -67,7 +67,6 @@ end
 
 function Transducer:indexStates(idx)
     self._rnn.rememberStates = true
-
     self._rnn.cellOutput    = self._rnn.cellOutput:index(2, idx)
     self._rnn.hiddenOutput  = self._rnn.hiddenOutput:index(2, idx)
     self._rnn.cellInput     = self._rnn.cellInput:index(2, idx)

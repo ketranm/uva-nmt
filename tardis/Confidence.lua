@@ -1,10 +1,9 @@
-
+require 'tardis.PairwiseLoss'
 local utils = require 'misc.utils'
 local Confidence, parent = torch.class('nn.Confidence', 'nn.Module')
 
-function Confidence:__init__(inputSize,hidSize,confidCriterion)
-
-	self.confidence = nn.Sequential()
+function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
+    self.confidence = nn.Sequential()
     self.confidence:add(nn.Dropout(0.2))
     self.confidence:add(nn.Linear(inputSize,hidSize))
     self.confidence:add(nn.Tanh())
@@ -16,31 +15,77 @@ function Confidence:__init__(inputSize,hidSize,confidCriterion)
         self.confidenceCriterion = nn.MSECriterion()
     elseif confidCriterion == 'mixtureCrossEnt' then
         self.confidenceCriterion = nn.ClassNLLCriterion()
+    elseif confidCriterion == 'pairwise' then
+	self.confidenceCriterion = nn.PairwiseLoss(opt)
     end
     self.confidCriterionType = confidCriterion
+    
+    self.downweightBAD = false 
+    self.gradDownweight = 0.5
+    self.good = 0
+    self.total = 0
+    self.downweightOK = false 
+
+    self.correctBeam = opt.correctBeam
 end
 
-function Confidence:forward(inputState,logProb,target)
+function Confidence:load(modelFile)
+	self.confidence = torch.load(modelFile)
+end
+function Confidence:clearState()
+	self.confidence:clearState()
+end
 
-	self.confidScore = self.confidence:forward(inputState)
-	self:forwardLoss(logProb,target)
+function Confidence:training()
+	self.confidence:training()
+end
+
+function Confidence:clearStatistics()
+	self.good = 0
+	self.total = 0
+end
+function Confidence:evaluate()
+	self.confidence:evaluate()
+end
+
+function Confidence:correctStatistics()
+	local bad = self.total - self.good
+	local shareGood = self.good/self.total
+	local shareBad = bad/self.total
+	return shareGood, shareBad
+end
+function Confidence:forward(inputState,logProb,target)
+	local confidScore = self.confidence:forward(inputState)
+	self:forwardLoss(confidScore,logProb,target)	
+	self.confidScore = confidScore 
 	return self.confidLoss
 end
 
+function Confidence:getConfidScore()
+	return self.confidScore
+end
 
-function Confidence:forwardLoss(logProb,target)
-
-	 if self.confidCriterionType == 'MSE' then 
-        local correctPredictions = utils.extractCorrectPredictions(logProb,target)
-        self.confidLoss = self.confidenceCriterion:forward(self.confidScore,correctPredictions)
+function Confidence:updateCounts()
+	local total = self.correctPredictions:size(1) * self.correctPredictions:size(2)
+	local good = self.correctPredictions:sum()
+	self.good = self.good + good
+	self.total = self.total + total
+end
+function Confidence:forwardLoss(confidScore,logProb,target)
+    if self.confidCriterionType == 'MSE' then 
+        local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.correctBeam)
+        self.confidLoss = self.confidenceCriterion:forward(confidScore,correctPredictions)
         self.correctPredictions = correctPredictions:cuda()
+	self:updateCounts()
         
     elseif self.confidCriterionType == 'mixtureCrossEnt' then
         local oracleMixtureDistr = computeOracleMixtureDistr(self.confidScore,self.logProb,target)
         self.oracleMixtureDistr = oracleMixtureDistr
         self.confidLoss = self.confidenceCriterion:forward(oracleMixtureDistr,target)
-    end
-    
+    elseif self.confidCriterionType == 'pairwise' then
+	--local confidLogProb = torch.add(logProb,torch.log(self.confidScore:expand(logProb:size())))
+	self.confidLoss = self.confidenceCriterion:forward(self.confidScore,logProb,target)
+    end 
 end
 
 
@@ -55,20 +100,39 @@ function computeOracleMixtureDistr(weight,logProb,target)
     return result
 end
 
-function Confidence:backward(inputState,target)
+function Confidence:backward(inputState,target,logProb)
    	local gradConfidCriterion = nil
 	if self.confidCriterionType == 'MSE' then 
 		gradConfidCriterion = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions)
 	elseif self.confidCriterionType == 'mixtureCrossEnt' then
 		gradConfidCriterion = self.confidenceCriterion:backward(self.oracleMixtureDistr,target:view(-1))
+	elseif self.confidCriterionType == 'pairwise' then
+		gradConfidCriterion = self.confidenceCriterion:backward(logProb)
 	end
-	
+
+	if self.downweightBAD or self.downweightOK then
+		local gradientWeights = self:computePerinstanceWeights()
+		gradConfidCriterion:cmul(gradientWeights)
+	end
+		
 	local gradConfid = self.confidence:backward(inputState,gradConfidCriterion)
+	--print(self.correctPredictions[1])
+	--print(gradConfid[1])
 	return gradConfid
 end
 
-
-
+function Confidence:computePerinstanceWeights()
+	local badInstances = self.correctPredictions:double():clone()
+  	if self.downweightBAD then	
+		badInstances = (-1)* badInstances:csub(torch.ones(self.correctPredictions:size()))
+	end	
+	local badInstancesWeights = torch.mul(badInstances,self.gradDownweight)
+	if self.downweightBAD then
+		return torch.add(self.correctPredictions:double(),badInstancesWeights):cuda()
+	else
+		return torch.add((-1)*badInstances:csub(torch.ones(self.correctPredictions:size())),badInstancesWeights):cuda()
+	end
+end
 
 
 
