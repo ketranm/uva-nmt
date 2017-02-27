@@ -94,6 +94,7 @@ function NMT:extractCorrectPredictions(logProb,target)
     local bla,predictions = logProb:topk(1,true)
     return torch.eq(predictions,target)
 end
+
 function NMT:backward(input, target)
     -- zero grad manually here
     self.gradParams:zero()
