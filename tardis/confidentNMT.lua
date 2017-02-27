@@ -32,7 +32,7 @@ function NMT:__init(opt)
     self.hidLayer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
     self.hidLayer:add(nn.Tanh())
 	
-    self.confidence = nn.Confidence(hiddenSize,confidenceHidSize,opt.confidCriterion)
+    self.confidence= nn.Confidence(hiddenSize,confidenceHidSize,opt.confidCriterion,opt)
     self.confidWeight = opt.confidWeight
     
     self.outputLayer = nn.Sequential()
@@ -47,23 +47,29 @@ function NMT:__init(opt)
     self.padIdx = opt.padIdx
     self.maxNorm = opt.maxNorm or 5
     -- for optim
-    self.optimConfig = {learningRate = 0.0002, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0.0001}
+    self.optimConfig = {learningRate = 0.002, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0.0001}
     self.optimStates = {}
 
 
 
 end
+function NMT:correctStatistics()
+	return self.confidence:correctStatistics()
+end
 
+function NMT:loadConfidence(modelFile)
+    self.confidence = torch.load(modelFile)
+end
 
 function NMT:loadModelWithoutConfidence(model)
     self.encoder= model.encoder
     self.decoder= model.decoder
     
     local hidLayer = nn.Sequential()
-    hidLayer:add(model.layer:get(1):clone())
-    hidLayer:add(model.layer:get(2):clone())
-    hidLayer:add(model.layer:get(3):clone())
-    hidLayer:add(model.layer:get(4):clone())
+    hidLayer:add(model.layer:get(1))
+    hidLayer:add(model.layer:get(2))
+    hidLayer:add(model.layer:get(3))
+    hidLayer:add(model.layer:get(4))
     self.hidLayer = hidLayer
 
     local outputLayer = nn.Sequential()
@@ -80,7 +86,7 @@ function NMT:type(type)
                                            self.glimpse,
                                            self.hidLayer,
                                            self.outputLayer,
-                                           self.confidence)
+                                           self.confidence.confidence)
 end
 
 function NMT:load(fileName)
@@ -94,36 +100,36 @@ function NMT:forward(input, target)
     self:stepDecoderUpToHidden(input[2])
     self:predictTargetLabel()
     local mainLoss = self.criterion:forward(self.logProb,target)
-    local confidLoss = self.confidence:forwardLoss(self.hidLayerOutput,self.logProb,target)
+    local confidLoss = self.confidence:forward(self.hidLayerOutput,self.logProb,target)
     self.confidLoss = confidLoss
-   
     return mainLoss,self.confidLoss 
 end
-
 
 
 function NMT:backward(input, target,mode)
     -- zero grad manually here
     self.gradParams:zero()
-    local hidLayerGradOutput = nil
-    if self.trainingScenario == 'confidenceMechanism' or (self.trainingScenario == 'alternating' and mode == 'confidence' then
-        hidLayerGradOutput = self.confidence:backward(self.hidLayerOutput,target)
+    local hidLayerGradOutput = torch.CudaTensor() 
+    if self.trainingScenario == 'confidenceMechanism' or (self.trainingScenario == 'alternating' and mode == 'confidence') then
+        hidLayerGradOutput = self.confidence:backward(self.hidLayerOutput,target,self.logProb)
     elseif self.trainingScenario == 'alternating' and mode == 'NMT' then
         local gradXent = self.criterion:backward(self.logProb, target:view(-1))
         hidLayerGradOutput = self.outputLayer:backward(self.hidLayerOutput,gradXent)
     elseif self.trainingScenario == 'joint' then
-        local gradConfid = self.confidence:backward(self.hidLayerOutput,target)
+        local gradXent = self.criterion:backward(self.logProb, target:view(-1))
+	local gradConfid = self.confidence:backward(self.hidLayerOutput,target)
         local gradOutputLayer = self.outputLayer:backward(self.hidLayerOutput,gradXent)
-        hidLayerGradOutput =  torch.mul(gradOutputLayer,self.NLLweight):add(torch.mul(gradConfid,self.confidWeight))
+	hidLayerGradOutput =  torch.mul(gradOutputLayer,self.NLLweight):add(torch.mul(gradConfid,self.confidWeight))
     end
-
+	
+        
     --backpropagate further if we dont just train the confidence mechanism
     if self.trainingScenario == 'alternating' or self.trainingScenario == 'joint' then
-        local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, hidLayerGradOutput)	
+        local gradHidLayer = self.hidLayer:backward({self.cntx, self.decOutput}, hidLayerGradOutput)
         local gradDecoder = gradHidLayer[2]-- grad to decoder
         local gradGlimpse =
             self.glimpse:backward({self.encOutput, self.decOutput}, gradHidLayer[1])
-        gradDecoder:add(gradGlimpse[2]) -- accumulate gradient in-place
+        gradDecoder:add(gradGlimpse[2]) -- accumulate gradient in-placep
         self.decoder:backward(input[2], gradDecoder)
         -- initialize gradient from decoder
         local gradStates = self.decoder:gradStates()
@@ -132,6 +138,7 @@ function NMT:backward(input, target,mode)
         local gradEncoder = gradGlimpse[1]
         self.encoder:backward(input[1], gradEncoder)
     end
+	
 end
 
 
@@ -146,13 +153,18 @@ end
 
 
 function NMT:extractConfidenceScores()
-    return self.confidScore
+    return self.confidence.confidScore
 end
 
 function NMT:predictTargetLabel()
     local logProb = self.outputLayer:forward(self.hidLayerOutput)
     self.logProb = logProb
     return self.logProb
+end
+
+function NMT:stepDecoder(x)
+	self:stepDecoderUpToHidden(x)
+	return self:predictTargetLabel()
 end
 
 

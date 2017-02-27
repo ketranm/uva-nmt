@@ -58,7 +58,7 @@ function BeamSearch:run(x, maxLength)
     ]]
     self.model:clearState()
     --self.model:resetStates()
-    self.model.decoder.rememberStates = true
+    self.model.decoder._rnn.rememberStates = false 
     local K, Nw = self.K, self.Nw
 
     local x = encodeString(x, self.vocab[1], self.reverseInput)
@@ -96,12 +96,14 @@ function BeamSearch:run(x, maxLength)
         local nx = xc:sum()--:type('torch.CudaLongTensor')
         if nx > 0 then
             -- found some candidates
+            --scores = scores:float()
             local cands = rowIdx:maskedSelect(xc)
-            local completedHyps = hypos:index(1, cands):narrow(2, 1, t)
-            local xscores = scores:index(1, xc:type('torch.CudaLongTensor')):view(-1)
-
+            local completedHyps = hypos:index(1, cands):float():narrow(2, 1, t)
+	    local xscores = scores:maskedSelect(xc):view(-1)
+            --local xscores = scores:index(1, xc:type('torch.CudaLongTensor')):view(-1)
+	    --print(xscores:size())
             -- add to nbest
-            xscores:div(t^alpha)
+            --xscores:div(t^alpha)
             for i = 1, nx do
                 local text = decodeString(completedHyps[i], self.vocab[2].idx2word, self._ignore)
                 local s = xscores[i]
@@ -124,7 +126,6 @@ function BeamSearch:run(x, maxLength)
         hypos[{{}, t+1}] = colIdx
         self.model:indexStates(rowIdx)
     end
-
     if #nbestCands == 0 then
         assert(K == self.K)
         scores = scores:view(-1)

@@ -1,5 +1,5 @@
 -- author: Ke Tran <m.k.tran@uva.nl>
-
+require 'cutorch'
 require 'tardis.GlimpseDot'
 require 'optim'
 require 'tardis.FastTransducer'
@@ -40,12 +40,15 @@ function NMT:__init(opt)
 
     self.maxNorm = opt.maxNorm or 5
     -- for optim
-    self.optimConfig = {learningRate = 0.0002, beta1 = 0.9, beta2 = 0.999}
+    self.optimConfig = {learningRate = 0.0002, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0.0001}
     self.optimStates = {}
 
     --self:reset()
 end
 
+
+function NMT:updateLearningRate(epoch)
+end
 function NMT:type(type)
     parent.type(self, type)
     self.params, self.gradParams =
@@ -77,8 +80,8 @@ function NMT:forward(input, target)
     --]]
     local target = target:view(-1)
     self:stepEncoder(input[1])
-
     local logProb = self:stepDecoder(input[2])
+    --self:extractCorrectPredictions(logProb,target)
     return self.criterion:forward(logProb, target)
 end
 
@@ -90,18 +93,41 @@ function NMT:forwardAndExtractErrors(input,target,errorFilters)
     return predictions, errors
 end
 
-function NMT:extractCorrectPredictions(logProb,target)
-    local bla,predictions = logProb:topk(1,true)
-    return torch.eq(predictions,target)
+function NMT:extractCorrectPredictions(target,beam)
+    if beam == nil then beam = 1 end
+    local bla,predictions = self.logProb:topk(beam,true)
+    if beam == 1 then 
+	return torch.eq(predictions,target)
+    else
+	local target = target:view(-1)
+	local result = torch.ByteTensor(target:size(1)):fill(0)
+	for i=1,target:size(1) do
+		local t = target[i]
+		for j=1,predictions:size(2) do
+			if predictions[i][j] == t then result[i] = 1 end
+		end
+	end
+	return result
+    end 
+    
+end
+
+
+function NMT:extractPairwiseLoss(target)
+    local topValues,predictions = self.logProb:topk(1,true)
+    local pairwiseLosses = {} 
+    for i=1,target:size(1) do
+	table.insert(pairwiseLosses,topValues[i]-self.logProb[target[i][1]])
+    end
+    return pairwiseLosses
 end
 
 function NMT:backward(input, target)
     -- zero grad manually here
     self.gradParams:zero()
     local gradXent = self.criterion:backward(self.logProb, target:view(-1))
-    print(type(gradXent))
+    --print(gradXent)
     local gradLayer = self.layer:backward({self.cntx, self.decOutput}, gradXent)
-
     local gradDecoder = gradLayer[2] -- grad to decoder
     local gradGlimpse =
         self.glimpse:backward({self.encOutput, self.decOutput}, gradLayer[1])
@@ -127,13 +153,13 @@ function NMT:update(learningRate)
     self.params:add(self.gradParams:mul(-scale)) -- do it in-place
 end
 
-function NMT:optimize(input, target)
+function NMT:optimize(input, target,mode)
     local feval = function(x)
         if self.params ~= x then
             self.params:copy(x)
         end
         local f = self:forward(input, target)
-        self:backward(input, target)
+        self:backward(input, target,mode)
         local gradNorm = self.gradParams:norm()
         -- clip gradient
         if gradNorm > self.maxNorm then
@@ -176,6 +202,7 @@ function NMT:stepEncoder(x)
     --]]
     self.encOutput = self.encoder:forward(x)
     self.prevStates = self.encoder:lastStates()
+--    self.decoder._rnn.rememberStates = false
     return self.encOutput
 end
 
@@ -191,6 +218,8 @@ function NMT:stepDecoder(x)
     Return:
     - `logProb` : cross entropy loss of the sequence
     --]]
+    --print(self.prevStates:size())
+    
     self.decoder:setStates(self.prevStates)
     self.decOutput = self.decoder:forward(x)
     self.cntx = self.glimpse:forward{self.encOutput, self.decOutput}

@@ -75,7 +75,7 @@ end
 function EnsemblePrediction:translate(xs)
     for i,m in ipairs(self.models) do 
         m:clearState() 
-        m.decoder.rememberStates = true
+        m.decoder._rnn.rememberStates = false 
     end
     local K, Nw = self.K, self.Nw
     local xs = _.map(xs, function(i,x) return encodeString(x, self.vocabs[i][1], self.reverseInput) end)
@@ -94,8 +94,15 @@ function EnsemblePrediction:translate(xs)
     
     for t = 1, T-1 do
         local curIdx = hypos[{{}, {t}}] -- t-th slice (column size K)
+	print('currIdx')
+	print(curIdx)
         local logProb = self:decodeAndCombinePredictions(curIdx,t)
+	--print(logProb[1])
         local maxscores, indices = logProb:topk(Nw, true)
+	print(logProb[1])
+	print('indices 1')
+	print(indices[1])
+	print(maxscores[1])
         local curscores = scores:repeatTensor(1, Nw)
         maxscores:add(curscores)
 
@@ -104,6 +111,8 @@ function EnsemblePrediction:translate(xs)
         local nr, nc = maxscores:size(1), maxscores:size(2)
         -- TODO: check with CudaLongTensor
         local rowIdx = flatIdx:long():add(-1):div(nc):add(1):typeAs(hypos)
+	print('indices 2')
+	print(indices[1])
         local colIdx = indices:view(-1):index(1, flatIdx)
 
         local xc = colIdx:eq(self.eosidx)--:type('torch.CudaLongTensor') -- completed sentence
@@ -111,8 +120,8 @@ function EnsemblePrediction:translate(xs)
         if nx > 0 then
              -- found some candidates
             local cands = rowIdx:maskedSelect(xc)
-            local completedHyps = hypos:index(1, cands):narrow(2, 1, t)
-            local xscores = scores:index(1, xc:type('torch.CudaLongTensor')):view(-1)
+            local completedHyps = hypos:index(1, cands):float():narrow(2, 1, t)
+            local xscores = scores:maskedSelect(xc):view(-1)
 
             -- add to nbest
             xscores:div(t^alpha)
