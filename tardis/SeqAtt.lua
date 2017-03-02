@@ -121,12 +121,11 @@ function NMT:extractPairwiseLoss(target)
     end
     return pairwiseLosses
 end
- 
+
 function NMT:backward(input, target)
     -- zero grad manually here
     self.gradParams:zero()
     local gradXent = self.criterion:backward(self.logProb, target:view(-1))
-    --print(gradXent)
     local gradLayer = self.layer:backward({self.cntx, self.decOutput}, gradXent)
     local gradDecoder = gradLayer[2] -- grad to decoder
     local gradGlimpse =

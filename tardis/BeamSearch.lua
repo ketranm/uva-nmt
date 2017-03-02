@@ -87,7 +87,7 @@ function BeamSearch:run(x, maxLength)
 
         local _scores, flatIdx = maxscores:view(-1):topk(K, true)
         scores = _scores:view(-1, 1)
-        local nr, nc = maxscores:size(1), maxscores:size(2)
+        local nr, nc = maxscores:size(1), maxscores:size(2) -- K , Nw
         -- TODO: check with CudaLongTensor
         local rowIdx = flatIdx:long():add(-1):div(nc):add(1):typeAs(hypos)
         local colIdx = indices:view(-1):index(1, flatIdx)
