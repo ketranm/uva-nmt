@@ -52,6 +52,7 @@ function AbstractDataLoader:train()
 end
 
 function AbstractDataLoader:valid()
+    print(self.tracker[2])
     self:load(self.tracker[2])
 end
 

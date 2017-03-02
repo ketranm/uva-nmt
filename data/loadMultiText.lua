@@ -26,8 +26,8 @@ function MultiDataLoader:__init(mainKwargs,multiKwargs)
 
     -- auxiliary file to store additional information about shards
     local indexfile = path.join(mainKwargs.dataPath, 'index.t7')
-    self.trgVocabSize = mainKwargs.trgVocabSize
-	self.srcVocabSizes = _.map(multiKwargs,function(i,v) return v.srcVocabSize end)
+    self.trgVocabSize = multiKwargs[1].targetSize
+	self.srcVocabSizes = _.map(multiKwargs,function(i,v) return v.sourceSize end)
 	self.vocabs = _.map(multiKwargs, function(i,kw) 
 			local vocFile =path.join(kw.dataPath,'vocab.t7') 
 			local voc = torch.load(vocFile)
@@ -60,6 +60,16 @@ function multiFileIterator(multiFiles)
     return iter
 end
 
+function MultiDataLoader.newTestLoader(multiOpt)
+	local testFiles = {}
+	for i,opt in ipairs(multiOpt) do
+		print(opt.textFile)
+		table.insert(testFiles,opt.textFile)
+	end
+	return multiFileIterator(testFiles)
+end
+
+	
 function MultiDataLoader:text2tensor(srcFiles, trgFile, shardSize, batchSize, tracker)
     --[[Load source and target text file and save to tensor format.
     If the files are too large, process a shard of shardSize sentences at a time

@@ -18,6 +18,9 @@ function DataLoader:__init(opt)
 
     -- helper
     local vocabfile = path.join(opt.dataPath, 'vocab.t7')
+    if opt.useTargetVocab ~= nil then
+	vocabfile = opt.useTargetVocab
+    end
     -- auxiliary file to store additional information about shards
     local indexfile = path.join(opt.dataPath, 'index.t7')
     self.vocab = {}
@@ -40,15 +43,26 @@ function DataLoader:__init(opt)
 
             torch.save(indexfile, self.tracker)
     else
-        self.vocab = torch.load(vocabfile)
+	
+	print('vocab'..vocabfile)
          if opt.loadMultiSourceData  == 1 then
             -- index file will be  created later
             self.nsents = 0
             self.currShard = {}
 	    self.currTracker = self.tracker[1]
+	elseif opt.useTargetVocab ~=nil and not path.exists(indexfile) then
+	    self.vocab = torch.load(vocabfile)
+	    print('=> create training tensor files...')
+            self:text2tensor(trainfiles, opt.shardSize, opt.batchSize, self.tracker[1])
+
+            print('=> create validation tensor files...')
+            self:text2tensor(validfiles, opt.shardSize, opt.batchSize, self.tracker[2])
+
+            torch.save(indexfile, self.tracker)	 
         else
         	self.tracker = torch.load(indexfile)
 	end
+        self.vocab = torch.load(vocabfile)
     end
     self.padIdx = self.vocab[2].idx('<pad>')
     assert(self.padIdx == 1)
