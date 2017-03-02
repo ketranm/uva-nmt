@@ -99,6 +99,11 @@ function utils.find_topk(k, mat)
     return res, row, col
 end
 
+function utils.extractCorrectPredictions(logProbTensor,targetTensor)
+	local bla,predictions = logProbTensor:topk(1,true)
+	return torch.eq(predictions,targetTensor):cuda()
+end	
+
 function utils.reverse(t, dim)
     --[[ Reverse tensor along the specified dimension
 
