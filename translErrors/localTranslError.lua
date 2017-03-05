@@ -1,3 +1,4 @@
+--require 'strict'
 function inSet(s,elem) 
 	for _,e1 in ipairs(s) do
 		if elem == e1 then return true end
@@ -6,6 +7,9 @@ function inSet(s,elem)
 end
 
 function yule_q(errorVector,agreeProd,disagreeProd)
+	if agreeProd + disagreeProd == 0 then
+		return 0
+	end
 	return (agreeProd - disagreeProd)/(agreeProd + disagreeProd)
 end
 
@@ -14,22 +18,39 @@ function rho_correlation(errorVector,agreeProd,disagreeProd)
 	local errorSecond = errorVector[1] + errorVector[4]
 	local correctFirst = errorVector[2] + errorVector[4]
 	local correctSecond = errorVector[2] + errorVector[3]
-
-	return (agreeProd + disagreeProd)/(errorFirst * errorSecond * correctFirst * correctSecond)
+	if errorFirst == 0 or correctFirst == 0 or correctSecond == 0 or errorSecond ==0 then
+		return 0
+	end
+	return (agreeProd + disagreeProd)/math.sqrt(errorFirst * errorSecond * correctFirst * correctSecond)
 end
 
 function disagreementMeasure(errorVector,agreeProd,disagreeProd)
+	if agreeProd + disagreeProd == 0 then
+		return 0
+	end
 		return (errorVector[3] + errorVector[4])/(agreeProd + disagreeProd)
 end
 
 function doubleFault(errorVector,agreeProd,disagreeProd)
+	if agreeProd + disagreeProd == 0 then
+		return 0
+	end
 		return errorVector[2]/(agreeProd + disagreeProd)
 end
 
 function computePairwiseStatistics(errorVector)
-	local agreeProd = torch.float(errorVector[1]*errorVector[2]
-	local disagreeProd = errorVector[3]*errorVector[4]
 	local result = {}
+	if torch.all(torch.eq(errorVector,torch.zeros(errorVector:size(1)))) then
+		result['yule_q'] =0 
+		result['rho_correlation'] = 0 
+		result['disagreementMeasure'] = 0 
+		result['doubleFault'] = 0 
+		return result
+	end		
+	local agreeProd = errorVector[1]*errorVector[2]
+	print('error counts')
+	print(errorVector)
+	local disagreeProd = errorVector[3]*errorVector[4]
 	result['yule_q'] =  yule_q(errorVector,agreeProd,disagreeProd)
 	result['rho_correlation'] = rho_correlation(errorVector,agreeProd,disagreeProd)
 	result['disagreementMeasure'] = disagreementMeasure(errorVector,agreeProd,disagreeProd)
@@ -37,12 +58,27 @@ function computePairwiseStatistics(errorVector)
 	return result
 end 
 
-function initializePairwiseStatistics()
+function initializePairwiseStatistics(operator)
 	local result = {}
+	if operator ~= nil then
+		if operator == 'max' then 
+			result['yule_q'] = {-1000} 
+			result['rho_correlation'] = {-1000}
+			result['disagreementMeasure'] = {-1000}
+			result['doubleFault'] = {-1000}
+		elseif operator == 'min' then
+			result['yule_q'] = {1000} 
+			result['rho_correlation'] = {1000}
+			result['disagreementMeasure'] = {1000}
+			result['doubleFault'] = {1000}
+		end
+	else	
+ 
 	result['yule_q'] =  0
 	result['rho_correlation'] = 0
 	result['disagreementMeasure'] = 0
 	result['doubleFault'] = 0
+	end
 	return result
 end
 
@@ -69,25 +105,16 @@ function BinaryTranslError:reset()
 	self.errorObservations=torch.zeros(self.errorObservations:size(1))
 end
 
-function BinaryTranslError:extractError(sentN,positN)
+function BinaryTranslError:extractError(errorInput)
         self.errorObservations:add(errorInput)
 end
 
 function BinaryTranslError:computePairwiseStatistics()
-	self.pairwiseStaitistics = computePairwiseStaitistics(self.errorObservations)
-	return self.pairwiseStaitistics
+	self.pairwiseStatistics = {computePairwiseStatistics(self.errorObservations)}
+	return self.pairwiseStatistics
 end
 
 
-local BinaryTranslError,parent = torch.class('torch.BinaryTranslError','LocalTranslError')
-
-function BinaryTranslError:__init() 
-	self.errorObservations = {}
-end
-
-function BinaryTranslError:extractError(sentN,positN)
-	table.insert(self.errorObservations,{sentN,positN})
-end
 
 local RefWordTranslError, parent = torch.class('torch.RefWordTranslError', 'LocalTranslError')
 
@@ -107,27 +134,40 @@ function RefWordTranslError:reset()
 end
 
 
-function RefWordTranslError:extractError(errorInput,refSequenceVector)
+function RefWordTranslError:extractError(errorInput,positN,refSequenceVector)
+	
 	local errorClass = refSequenceVector[positN]
 	self.errorObservations[errorClass]:add(errorInput)
 end
 
 function RefWordTranslError:computePairwiseStatistics()
-	totalNumberObservations = 0
-	result = initializePairwiseStatistics()
-
+	local totalNumberObservations = 0
+	local resultSum = initializePairwiseStatistics()
+	local resultMax = initializePairwiseStatistics('max')
+	local resultMin = initializePairwiseStatistics('min')
 	for cl,errVector in pairs(self.errorObservations) do
 		numberClassObservations = errVector:sum()
 		totalNumberObservations = totalNumberObservations + numberClassObservations
-		classPairwiseStatistics = computePairwiseStaitistics(errVector)
+		classPairwiseStatistics = computePairwiseStatistics(errVector)
 		for stat,value in pairs(classPairwiseStatistics) do
-			result[stat] = result[stat] + numberClassObservations*value
+			local update = numberClassObservations*value
+			resultSum[stat] = resultSum[stat] + update 
+			if update > resultMax[stat][1] then 
+				resultMax[stat][1] = update 
+				resultMax[stat][2] = cl 
+			end
+			if update < resultMin[stat][1] then 
+				resultMin[stat][1] = update 
+				resultMin[stat][2] = cl
+			end
 		end
 	end
-	for stat,value in pairs(result) do
-		result[stat] = result[stat]/totalNumberObservations
+	for stat,value in pairs(resultSum) do
+		resultSum[stat] = resultSum[stat]/totalNumberObservations
+		resultMax[stat][1] = resultMax[stat][1]/totalNumberObservations
+		resultMin[stat][1] = resultMin[stat][1]/totalNumberObservations
 	end
-	self.pairwiseStaitistics = result
+	self.pairwiseStaitistics = {resultSum,resultMax,resultMin}
 	return self.pairwiseStaitistics
 end
 
@@ -193,17 +233,17 @@ function NgramContextTranslError:extractError(errorInput,positN, refSequenceVect
 end
 	
 	
-function RefWordTranslError:computePairwiseStatistics()
+function NgramContextTranslError:computePairwiseStatistics()
 	totalNumberObservations = 0
 
 	function traverseTree(tree)
-		totalNumberObservations = 0
-		result = initializePairwiseStatistics()		
+		local totalNumberObservations = 0
+		local result = initializePairwiseStatistics()		
 		for cl,subtree in pairs(tree) do
 			if cl == -1 then
 				numberClassObservations = subtree:sum()
-				classStatistics = computePairwiseStaitistics(subtree)
-				for stat,value in pairs(classStatistics)
+				classStatistics = computePairwiseStatistics(subtree)
+				for stat,value in pairs(classStatistics) do
 					result[stat] = result[stat] + value*numberClassObservations
 				end
 				totalNumberObservations = totalNumberObservations + numberClassObservations
@@ -224,7 +264,7 @@ function RefWordTranslError:computePairwiseStatistics()
 		self.pairwiseStaitistics[stat] = unNormalizedStatistics[stat]/totalNumberObservations
 	end
 	
-	return self.pairwiseStaitistics
+	return {self.pairwiseStaitistics}
 end
 
 	
