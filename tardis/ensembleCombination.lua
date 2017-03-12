@@ -52,7 +52,7 @@ function logSumExp2(vector)
 end
 function entropyConfidence()
 	local temperature = 1
-	local topK = 5 
+	local topK = 20 
 	function getTopKDistributions(tableOutputs)
 		local result = {}
 		for _,d in ipairs(tableOutputs) do

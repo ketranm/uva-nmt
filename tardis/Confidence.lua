@@ -9,6 +9,7 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     self.confidence:add(nn.Tanh())
     self.confidence:add(nn.Dropout(0.2))
     self.confidence:add(nn.Linear(hidSize,1))
+    self.confidence:add(nn.MulConstant(0.5))
     self.confidence:add(nn.Sigmoid())
 
     if confidCriterion == 'MSE' then
@@ -16,7 +17,8 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     elseif confidCriterion == 'mixtureCrossEnt' then
         self.confidenceCriterion = nn.ClassNLLCriterion()
     elseif confidCriterion == 'pairwise' then
-	self.confidenceCriterion = nn.PairwiseLoss(opt)
+	self.confidenceCriterion_1 = nn.PairwiseLoss(opt)
+        self.confidenceCriterion_2 = nn.MSECriterion()
     end
     self.confidCriterionType = confidCriterion
     
@@ -84,7 +86,12 @@ function Confidence:forwardLoss(confidScore,logProb,target)
         self.confidLoss = self.confidenceCriterion:forward(oracleMixtureDistr,target)
     elseif self.confidCriterionType == 'pairwise' then
 	--local confidLogProb = torch.add(logProb,torch.log(self.confidScore:expand(logProb:size())))
-	self.confidLoss = self.confidenceCriterion:forward(self.confidScore,logProb,target)
+	local confidLoss_1 = self.confidenceCriterion_1:forward(confidScore,logProb,target)
+        local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.correctBeam)
+        local confidLoss_2 = self.confidenceCriterion_2:forward(confidScore,correctPredictions)
+	self.confidLoss = confidLoss_2
+        self.correctPredictions = correctPredictions:cuda()
+	self:updateCounts()
     end 
 end
 
@@ -107,9 +114,11 @@ function Confidence:backward(inputState,target,logProb)
 	elseif self.confidCriterionType == 'mixtureCrossEnt' then
 		gradConfidCriterion = self.confidenceCriterion:backward(self.oracleMixtureDistr,target:view(-1))
 	elseif self.confidCriterionType == 'pairwise' then
-		gradConfidCriterion = self.confidenceCriterion:backward(logProb)
+		local gradConfidCriterion_1 = self.confidenceCriterion_1:backward(logProb)
+		local gradConfidCriterion_2 = self.confidenceCriterion_2:backward(self.confidScore,self.correctPredictions)
+		gradConfidCriterion = torch.mul(gradConfidCriterion_1,1)-- + gradConfidCriterion_2 
 	end
-
+	--print(gradConfidCriterion[1])
 	if self.downweightBAD or self.downweightOK then
 		local gradientWeights = self:computePerinstanceWeights()
 		gradConfidCriterion:cmul(gradientWeights)
