@@ -105,6 +105,9 @@ function NMT:forward(input, target)
     return mainLoss,self.confidLoss 
 end
 
+function NMT:predictConfidenceScore()
+    return self.confidence:computeConfidScore(self.hidLayerOutput)
+end
 
 function NMT:backward(input, target,mode)
     -- zero grad manually here

@@ -63,6 +63,11 @@ function Confidence:forward(inputState,logProb,target)
 	return self.confidLoss
 end
 
+function Confidence:computeConfidScore(inputState)
+	local confidScore = self.confidence:forward(inputState)
+	return confidScore
+end
+
 function Confidence:getConfidScore()
 	return self.confidScore
 end
