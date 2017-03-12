@@ -3,7 +3,7 @@ local EntropyConstraint,parent = torch.class('nn.EntropyConstraint', 'nn.Criteri
 
 function EntropyConstraint:__init(opt)
 	if opt.normalizeEntropy == 1 then
-		self.normalize = 1/torch.log(self.targetSize)
+		self.normalize = 1/torch.log(opt.targetSize)
 	else
 		self.normalize = 1
 	end
@@ -39,12 +39,11 @@ function EntropyConstraint:forward(logProb)
 	if self.approxEntropyK > 0 then
 		probDistr = torch.cmul(probDistr,getTopKDistributionNonZero(inputLogProb,self.approxEntropyK))
 	end
-	
-	local negEntropy = torch.sum(torch.cmul(inputLogProb,probDistr))
-	self.entropy = torch.mul(negEntropy,-1*self.normalize)
-	local averagedEntropy = torch.sum(self.entropy)/self.entropy:size(1)
+	local negEntropy = torch.sum(torch.cmul(inputLogProb,probDistr),2)
+	self.negEntropy = torch.mul(negEntropy,self.normalize)
+	local averagedEntropy = torch.sum(self.negEntropy)/self.negEntropy:size(1)
 	return averagedEntropy
-endh
+end
 
 function EntropyConstraint:backward(inputLogProb)
 	local probDistr = torch.exp(inputLogProb)
@@ -52,7 +51,7 @@ function EntropyConstraint:backward(inputLogProb)
 		probDistr = torch.cmul(probDistr,getTopKDistributionNonZero(inputLogProb,self.approxEntropyK))
 	end
 	local normalizedLogProb = torch.mul(inputLogProb,self.normalize)
-	normalizedLogProb:csub(self.entropy:expandAs(normalizedLogProb))
+	torch.add(normalizedLogProb,self.negEntropy:expandAs(normalizedLogProb))
 	local gradEntropy = torch.cmul(probDistr,normalizedLogProb)
 	return gradEntropy
 end

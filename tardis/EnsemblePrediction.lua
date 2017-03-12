@@ -94,15 +94,9 @@ function EnsemblePrediction:translate(xs)
     
     for t = 1, T-1 do
         local curIdx = hypos[{{}, {t}}] -- t-th slice (column size K)
-	print('currIdx')
-	print(curIdx)
         local logProb = self:decodeAndCombinePredictions(curIdx,t)
 	--print(logProb[1])
         local maxscores, indices = logProb:topk(Nw, true)
-	print(logProb[1])
-	print('indices 1')
-	print(indices[1])
-	print(maxscores[1])
         local curscores = scores:repeatTensor(1, Nw)
         maxscores:add(curscores)
 
@@ -111,8 +105,6 @@ function EnsemblePrediction:translate(xs)
         local nr, nc = maxscores:size(1), maxscores:size(2)
         -- TODO: check with CudaLongTensor
         local rowIdx = flatIdx:long():add(-1):div(nc):add(1):typeAs(hypos)
-	print('indices 2')
-	print(indices[1])
         local colIdx = indices:view(-1):index(1, flatIdx)
 
         local xc = colIdx:eq(self.eosidx)--:type('torch.CudaLongTensor') -- completed sentence

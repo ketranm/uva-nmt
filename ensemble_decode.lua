@@ -1,15 +1,20 @@
-require 'torch'
+require 'cutorch'
 require 'nn'
-
-require 'tardis.Ensemble'
+require 'cunn'
+require 'tardis.EnsemblePrediction'
 require 'data.loadMultiText'
 local cfg = require 'pl.config'
-local opt = cfg.read(arg[1])
-
 local timer = torch.Timer()
 torch.manualSeed(42)
 local cfg = require 'pl.config'
 local opt = cfg.read(arg[1])
+local multiOpt = {}
+for c in opt.configFiles:gmatch("%S+") do
+
+	indivOpt =  cfg.read(c)
+	indivOpt.padIdx = 1
+	table.insert(multiOpt,indivOpt)
+end
 if not opt.gpuid then opt.gpuid = 0 end
 torch.manualSeed(opt.seed or 42)
 cutorch.setDevice(opt.gpuid + 1)
@@ -19,27 +24,20 @@ print('Experiment Setting: ', opt)
 io:flush()
 
 
-local ensemble = Ensemble:new(opt)
+local ensemble = EnsemblePrediction(opt,multiOpt)
 
-
-local transFilename =  kwargs.transFile or 'translation.txt'
+local transFilename =  opt.transFile or 'translation.txt'
 local outfile = io.open(transFilename,"w")
-local nbestFile = io.open(transFilename .. '.nbest', 'w')
-local multiSrcLoader = MultiDataLoader:new(opt)
-
-local nbLines = 0   
-multiSrcLoader:loadTestFiles()
+local multiSrcLoader = MultiDataLoader.newTestLoader(multiOpt)
+local nlines = 0   
 while true do
-    nbLines = nbLines + 1
-    local x_tuple = multiSrcLoader:nextSrcTuple()
+    nlines = nlines + 1
+    local x_tuple = multiSrcLoader() --:nextSrcTuple()
     if x_tuple == nil then break end
-    local translation,nbestList = ensemble:translate(x_tuple)
+    local translation = ensemble:translate(x_tuple)
     outfile:write(translation..'\n')
     outfile:flush()
-    nbestFile:write('SENTID=' .. nbLines .. '\n')
-    nbestFile:write(table.concat(nbestList, '\n') .. '\n')
-    nbestFile:flush()
-
+    io.write(string.format('translated sentence %d\r', nlines))
+    io.flush()
 end
-    
-io.close(nbestFile)
+outfile:close()   
