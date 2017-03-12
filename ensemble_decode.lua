@@ -21,6 +21,7 @@ io:flush()
 
 local ensemble = Ensemble:new(opt)
 
+
 local transFilename =  kwargs.transFile or 'translation.txt'
 local outfile = io.open(transFilename,"w")
 local nbestFile = io.open(transFilename .. '.nbest', 'w')
