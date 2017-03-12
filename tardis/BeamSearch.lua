@@ -50,6 +50,26 @@ function decodeString(input, idx2word, ignore)
     return table.concat(output, ' ')
 end
 
+function prune(maxscores,indices)
+    function entropy(distrib)
+        local prob = torch.exp(distrib)
+        local result = torch.cmul(distrib,prob)
+        return torch.mul(result,-1)
+    end
+
+    local currBeam = maxscores:size(1)
+    local pruneFactor = 1/2
+    local newBeam = currBeam*pruneFactor
+    local thresHold = 1
+    local approxEntropy = entropy(maxscores)
+    if approxEntropy < thresHold then
+        local newmaxscores,newindices = maxscores:topk(newBeam,true) 
+        return newmaxscores,newindices
+    else
+        return maxscores,indices
+    end
+end
+
 function BeamSearch:run(x, maxLength)
     --[[
     Beam search:
@@ -81,8 +101,9 @@ function BeamSearch:run(x, maxLength)
         if t == 1 then
             logProb[{{2, K}, {}}]:fill(-math.huge)
         end
-        local maxscores, indices = logProb:topk(Nw, true)
-        local curscores = scores:repeatTensor(1, Nw)
+        local maxscores, indices = logProb:topk(Nw, true) -- prune here
+        maxscores, indices = prune(maxscores, indices)
+        local curscores = scores:repeatTensor(1, maxscores:size(1))
         maxscores:add(curscores)
 
         local _scores, flatIdx = maxscores:view(-1):topk(K, true)
