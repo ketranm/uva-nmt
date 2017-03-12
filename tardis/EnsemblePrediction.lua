@@ -26,11 +26,21 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
     for i,model_kwargs in ipairs(multiKwargs) do 
        self.numModels = self.numModels + 1
         local vocab = torch.load(model_kwargs.dataPath..'/vocab.t7')
-        local m = nn.NMT(model_kwargs)
+        local m = nil
+        if self.combinMethod == 'confidPrediction' then
+            m = nn.confidentNMT(model_kwargs)
+            m:type('torch.CudaTensor')
+            m:loadModelWithoutConfidence(model_kwargs.modelToLoad)    
+            m:loadConfidence(model_kwargs.confidenceModel)
+            m.confdence:evaluate()
+        else
+            m = nn.NMT(model_kwargs)
+            m:type('torch.CudaTensor')
+            m:load(model_kwargs.modelFile)
+        end
         --m:use_vocab(vocab)
-        m:type('torch.CudaTensor')
-        m:load(model_kwargs.modelFile)
         m:evaluate()
+    
         table.insert(self.vocabs,vocab)
         table.insert(self.models,m)
         table.insert(self.configs,model_kwargs)
@@ -66,6 +76,8 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
     elseif self.combinMethod == 'expertMixtureHier' then
         self.combinMachine = combinMachine.expertMixture(kwargs.combMachineParametersFile,kwargs.combMachineSubmodel1,kwargs.combMachineSubmodel2,
                     self.embeddingSize,kwargs.combinWithBackprop)
+    elseif self.combinMethod == 'confidPrediction' then
+        self.combinMachine = combinMachine.confidenceMixture(kwargs.confidenceScoreCombination)
     end
 
     return self
@@ -157,13 +169,21 @@ end
 
 
 function EnsemblePrediction:decodeAndCombinePredictions(curIdx,timeStep)
-    local logProbs = _.map(self.models, function(i,m) return m:stepDecoder(curIdx) end) 
+    local logProbs = nil
+    local combinWeights = nil
+    if self.combinMethod == 'confidPrediction' then
+        _.each(self.models, function(i,m) m:stepDecoderUpToHidden(curIdx) end)
+        logProbs = _.map(self.models, function(i,m) return m:predictTargetLabel end)
+        combinWeights = _.map(self.models,function(i,m) return m:predictConfidenceScore() end)
+    else
+        logProbs = _.map(self.models, function(i,m) return m:stepDecoder(curIdx) end) 
+    end
     -- quick hack to handle the first prediction
     for i,lPr in ipairs(logProbs) do
         if t == 1 then
             lPr[{{2, K}, {}}]:fill(-math.huge) -- gives <pad> highest prob - why??
         end
     end
-    return self.combinMachine(logProbs)
+    return self.combinMachine(logProbs,combinWeights)
 
 end
