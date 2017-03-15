@@ -4,7 +4,9 @@ function scalarCombination(scWeights,outputDim,inputType)
 	local weights = scWeights
 	--print(weights)
 	if inputType == 'prob' then
+		print('test')
 		local logWeights = _.map(weights,function(i,v) return torch.log(v) end)
+		print(logWeights)
 		function comb(tableOutputs)
 			local len = tableOutputs[1]:size(1)
 			--local weigtedExperts = _.map(tableOutputs, function(i,v) return v:add(logWeights[i]):view(len,outputDim,1) end)
@@ -26,7 +28,6 @@ function scalarCombination(scWeights,outputDim,inputType)
    			local oneTensor = torch.CudaTensor(secondAdd:size()):fill(1.0)
    			secondAdd = torch.log(secondAdd+oneTensor)
    			return weigtedExperts[1] + secondAdd
-
 		end
 		return comb
 	else
@@ -53,7 +54,7 @@ end
 
 function entropyConfidence()
 	local temperature = 1
-	local topK = 20 
+	local topK = 10 
 	function getTopKDistributions(tableOutputs)
 		local result = {}
 		for _,d in ipairs(tableOutputs) do
@@ -120,14 +121,6 @@ function confidenceMixture(confidenceScoreCombination)
 		local oneTensor = torch.CudaTensor(secondAdd:size()):fill(1.0)
 		secondAdd = torch.log(secondAdd+oneTensor)
 		return weigtedExperts[1] + secondAdd
-	end
-
-   			
-   			
-   			
-   			
-
-
 	end
 end
 
