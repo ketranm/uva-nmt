@@ -52,43 +52,6 @@ function logSumExp2(vector)
 	return vStar + torch.log(1 + torch.exp(v2))
 end
 
-function entropyConfidence()
-	local temperature = 1
-
-	local topK = 5 
-	
-	function negEntropy(distrib)
-		--[[local n = distrib:size(2)
-		local const = torch.mul(distrib[{{},{1}}],-1)
-		local modifDistrib = torch.add(distrib,const:expand(distrib:size())) --:expand(distrib:size())
-		local modifProb = torch.exp(modifDistrib)
-		local modifEnt = torch.mul(torch.sum(torch.cmul(modifDistrib,modifProb),2),-1)
-		modifEnt:cmul(torch.exp(const))
-		local secondAdd = torch.cmul(const,torch.mul(torch.exp(const),-1*n))
-		local result = modifEnt + secondAdd
-		return torch.mul(torch.cmul(result,torch.exp(torch.mul(const,-1))),-1) ]]--
-		local prob = torch.exp(distrib)
-		local result = torch.cmul(distrib,prob)
-		return result
-	end
-	function comb(tableOutputs)
-		collectgarbage()
-		local tableOutputs_topk = tableOutputs
-		if topK > 0 then
-			tableOutputs_topk =  getTopKDistributions(tableOutputs)
-		end
-		local negEntropies = torch.cat(_.map(tableOutputs_topk,function(i,v) return negEntropy(v) end))
-		negEntropies = negEntropies/temperature
-		local logWeights = negEntropies - logSumExp2(negEntropies):expand(negEntropies:size())
-		local weigtedExperts = _.map(tableOutputs, function(i,v) return v:add(logWeights[{{},{i}}]:expand(tableOutputs[1]:size())) end)
-   		local secondAdd  = torch.exp(weigtedExperts[2]-weigtedExperts[1])
-   		local oneTensor = torch.CudaTensor(secondAdd:size()):fill(1.0)
-   		secondAdd = torch.log(secondAdd+oneTensor)
-   		return weigtedExperts[1] + secondAdd
-	end
-
-	return comb
-end
 
 function getTopKDistributions(tableOutputs,topK)
 		local result = {}
