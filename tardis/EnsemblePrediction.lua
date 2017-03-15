@@ -117,7 +117,6 @@ function EnsemblePrediction:translate(xs)
         local _scores, flatIdx = maxscores:view(-1):topk(K, true)
         scores = _scores:view(-1, 1)
         local nr, nc = maxscores:size(1), maxscores:size(2)
-        -- TODO: check with CudaLongTensor
         local rowIdx = flatIdx:long():add(-1):div(nc):add(1):typeAs(hypos)
         local colIdx = indices:view(-1):index(1, flatIdx)
 
@@ -175,7 +174,7 @@ function EnsemblePrediction:decodeAndCombinePredictions(curIdx,timeStep)
     local combinWeights = nil
     if self.combinMethod == 'confidPrediction' then
         _.each(self.models, function(i,m) m:stepDecoderUpToHidden(curIdx) end)
-        logProbs = _.map(self.models, function(i,m) return m:predictTargetLabel end)
+        logProbs = _.map(self.models, function(i,m) return m:predictTargetLabel() end)
         combinWeights = _.map(self.models,function(i,m) return m:predictConfidenceScore() end)
     else
         logProbs = _.map(self.models, function(i,m) return m:stepDecoder(curIdx) end) 
