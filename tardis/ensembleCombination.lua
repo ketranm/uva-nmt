@@ -54,16 +54,9 @@ end
 
 function entropyConfidence()
 	local temperature = 1
-	local topK = 10 
-	function getTopKDistributions(tableOutputs)
-		local result = {}
-		for _,d in ipairs(tableOutputs) do
-			local vals,_ = d:topk(topK,true)
-			table.insert(result,vals)
-		end
-		return result
-	end
 
+	local topK = 5 
+	
 	function negEntropy(distrib)
 		--[[local n = distrib:size(2)
 		local const = torch.mul(distrib[{{},{1}}],-1)
@@ -92,6 +85,42 @@ function entropyConfidence()
    		local oneTensor = torch.CudaTensor(secondAdd:size()):fill(1.0)
    		secondAdd = torch.log(secondAdd+oneTensor)
    		return weigtedExperts[1] + secondAdd
+	end
+
+	return comb
+end
+
+function getTopKDistributions(tableOutputs)
+		local result = {}
+		for _,d in ipairs(tableOutputs) do
+			local vals,_ = d:topk(topK,true)
+			table.insert(result,vals)
+		end
+		return result
+end
+
+function negEntropy(distrib)
+	local prob = torch.exp(distrib)
+	local result = torch.cmul(distrib,prob)
+	return result
+end
+
+function entropyConfidence()
+	local temperature = 1
+	local topK = 10
+	
+	function comb(tableOutputs)
+		local tableOutputs_topk = tableOutputs
+		if topK > 0 then
+			tableOutputs_topk =  getTopKDistributions(tableOutputs)
+		end
+		local negEntropies = torch.cat(_.map(tableOutputs_topk,function(i,v) return negEntropy(v) end))
+		
+		local result = tableOutputs[1]
+		if negEntropies[1] <  negEntropies[2] then
+			result = tableOutputs[2]
+		end
+		return result
 	end
 
 	return comb
