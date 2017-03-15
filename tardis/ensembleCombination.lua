@@ -88,7 +88,7 @@ function entropyConfidence()
 	return comb
 end
 
-function getTopKDistributions(tableOutputs)
+function getTopKDistributions(tableOutputs,topK)
 		local result = {}
 		for _,d in ipairs(tableOutputs) do
 			local vals,_ = d:topk(topK,true)
@@ -108,20 +108,41 @@ function entropyConfidence()
 	local topK = 10
 	
 	function comb(tableOutputs)
+		collectgarbage()
 		local tableOutputs_topk = tableOutputs
 		if topK > 0 then
-			tableOutputs_topk =  getTopKDistributions(tableOutputs)
+			tableOutputs_topk =  getTopKDistributions(tableOutputs,topK)
 		end
 		local negEntropies = torch.cat(_.map(tableOutputs_topk,function(i,v) return negEntropy(v) end))
-		
+		negEntropies = negEntropies/temperature
+
+		local logWeights = negEntropies - logSumExp2(negEntropies):expand(negEntropies:size())
+		local weigtedExperts = _.map(tableOutputs, function(i,v) return v:add(logWeights[{{},{i}}]:expand(tableOutputs[1]:size())) end)
+   		local secondAdd  = torch.exp(weigtedExperts[2]-weigtedExperts[1])
+   		local oneTensor = torch.CudaTensor(secondAdd:size()):fill(1.0)
+   		secondAdd = torch.log(secondAdd+oneTensor)
+   		return weigtedExperts[1] + secondAdd
+	end
+
+	return comb
+end
+
+function entropyConfidenceBinary()
+	local topK = 10
+
+	function comb(tableOutputs)
+		local tableOutputs_topk = tableOutputs
+		if topK > 0 then
+			tableOutputs_topk =  getTopKDistributions(tableOutputs,topK)
+		end
+		local negEntropies = torch.cat(_.map(tableOutputs_topk,function(i,v) return negEntropy(v) end))
+
 		local result = tableOutputs[1]
 		if negEntropies[1] <  negEntropies[2] then
 			result = tableOutputs[2]
 		end
 		return result
 	end
-
-	return comb
 end
 
 
