@@ -103,8 +103,10 @@ function entropyConfidenceBinary()
 		local negEntropies = torch.cat(_.map(tableOutputs_topk,function(i,v) return negEntropy(v) end))
 
 		local result = tableOutputs[1]
-		if negEntropies[1] <  negEntropies[2] then
-			result = tableOutputs[2]
+		for i=1,negEntropies:size(1) do
+			if negEntropies[1][i] <  negEntropies[2][i] then
+				result[i] = tableOutputs[2][i]
+			end
 		end
 		return result
 	end
