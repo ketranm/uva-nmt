@@ -35,6 +35,11 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
      	self.gradDownweight = opt.gradDownweight 
     end
     self.correctBeam = opt.correctBeam
+    if opt.labelValue ~=nil  then		
+	self.labelValue = opt.labelValue
+    else 
+	self.labelValue = 'binary'
+    end
 end
 
 function Confidence:load(modelFile)
