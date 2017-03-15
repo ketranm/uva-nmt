@@ -66,6 +66,8 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
         self.combinMachine = scalarCombination(scalarWeights,self.trgVocabSize,self.combinInput)
     elseif self.combinMethod == 'entropyConfidence' then
         self.combinMachine = entropyConfidence()
+    elseif self.combinMethod == 'entropyConfidenceBinary' then
+        self.combinMachine = entropyConfidenceBinary()
     elseif self.combinMethod == 'scalarRandom' then
         self.combinMachine = combinMachine.randomScalarCombination(self.combinInput)
     elseif self.combinMethod == 'loglinCombination' then
