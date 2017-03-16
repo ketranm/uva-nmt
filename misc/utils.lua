@@ -106,9 +106,9 @@ function utils.extractCorrectPredictions(logProbTensor,targetTensor,labelValue)
 	elseif labelValue == 'relativDiff' then
 		local correct = torch.CudaTensor(highestVals:size())
 		for i=1,targetTensor:size(1) do
-			correct[i]=logProbTensor[i][targetTensor[i]]
+			correct[i][1]=logProbTensor[i][targetTensor[i]]
 		end
-		local result = torch.cdiv(torch.csub(highestVals,correct),highestVals)
+		local result = torch.exp(torch.csub(correct,highestVals))
 		return result
 	end	
 end	
