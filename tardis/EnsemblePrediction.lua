@@ -112,6 +112,9 @@ function EnsemblePrediction:translate(xs)
         local curIdx = hypos[{{}, {t}}] -- t-th slice (column size K)
         local logProb = self:decodeAndCombinePredictions(curIdx,t)
 	--print(logProb[1])
+        if t == 1 then
+            logProb[{{2, K}, {}}]:fill(-math.huge)
+        end
         local maxscores, indices = logProb:topk(Nw, true)
         local curscores = scores:repeatTensor(1, Nw)
         maxscores:add(curscores)

@@ -21,12 +21,14 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
         self.confidenceCriterion_2 = nn.MSECriterion()
     end
     self.confidCriterionType = confidCriterion
-   
-    self.downweightBAD = false
-    if opt.downweightBAD == 1 then
-	self.downweightBAD = true 
-     	self.gradDownweight = opt.gradDownweight 
+    
+    if opt.labelValue ~=nil then
+    	self.labelValue = opt.labelValue
+    else
+    	self.labelValue = 'binary'
     end
+    self.downweightBAD = false 
+    self.gradDownweight = 0.5
     self.good = 0
     self.total = 0
     self.downweightOK = false 
