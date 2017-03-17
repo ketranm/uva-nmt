@@ -22,6 +22,11 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     end
     self.confidCriterionType = confidCriterion
     
+    if opt.labelValue ~=nil then
+    	self.labelValue = opt.labelValue
+    else
+    	self.labelValue = 'binary'
+    end
     self.downweightBAD = false 
     self.gradDownweight = 0.5
     self.good = 0
@@ -80,7 +85,7 @@ function Confidence:updateCounts()
 end
 function Confidence:forwardLoss(confidScore,logProb,target)
     if self.confidCriterionType == 'MSE' then 
-        local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.correctBeam)
+        local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.correctBeam,self.labelValue)
         self.confidLoss = self.confidenceCriterion:forward(confidScore,correctPredictions)
         self.correctPredictions = correctPredictions:cuda()
 	self:updateCounts()
