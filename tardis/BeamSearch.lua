@@ -96,14 +96,15 @@ function BeamSearch:run(x, maxLength)
     local alpha = self.normLength
     for t = 1, T-1 do
         local curIdx = hypos[{{}, {t}}]
+	print(curIdx)
         local logProb = self.model:stepDecoder(curIdx)
         -- quick hack to handle the first prediction
         if t == 1 then
             logProb[{{2, K}, {}}]:fill(-math.huge)
         end
         local maxscores, indices = logProb:topk(Nw, true) -- prune here
-        maxscores, indices = prune(maxscores, indices)
-        local curscores = scores:repeatTensor(1, maxscores:size(1))
+        --maxscores, indices = prune(maxscores, indices)
+        local curscores = scores:repeatTensor(1,Nw) 
         maxscores:add(curscores)
 
         local _scores, flatIdx = maxscores:view(-1):topk(K, true)

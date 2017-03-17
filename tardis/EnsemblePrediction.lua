@@ -1,6 +1,7 @@
 local EnsemblePrediction = torch.class('EnsemblePrediction')
 local cfg = require 'pl.config'
 require 'tardis.SeqAtt'
+require 'tardis.confidentNMT'
 local _ = require 'moses'
 require 'tardis.BeamSearch'
 require 'tardis.ensembleCombination'
@@ -28,11 +29,15 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
         local vocab = torch.load(model_kwargs.dataPath..'/vocab.t7')
         local m = nil
         if self.combinMethod == 'confidPrediction' then
+	    m1 = nn.NMT(model_kwargs)
+	    m1:type('torch.CudaTensor')
+	    m1:load(model_kwargs.modelToLoad)    
             m = nn.confidentNMT(model_kwargs)
             m:type('torch.CudaTensor')
-            m:loadModelWithoutConfidence(model_kwargs.modelToLoad)    
-            m:loadConfidence(model_kwargs.confidenceModel)
-            m.confdence:evaluate()
+            m:loadModelWithoutConfidence(m1)
+            m:loadConfidence(model_kwargs.confidenceModelToLoad)
+            m.confidence:evaluate()
+	    collectgarbage()
         else
             m = nn.NMT(model_kwargs)
             m:type('torch.CudaTensor')
@@ -79,9 +84,9 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
         self.combinMachine = combinMachine.expertMixture(kwargs.combMachineParametersFile,kwargs.combMachineSubmodel1,kwargs.combMachineSubmodel2,
                     self.embeddingSize,kwargs.combinWithBackprop)
     elseif self.combinMethod == 'confidPrediction' then
-        self.combinMachine = combinMachine.confidenceMixture(kwargs.confidenceScoreCombination)
+        self.combinMachine = confidenceMixture(kwargs.confidenceScoreCombination)
     end
-
+    
     return self
 end
 
@@ -107,13 +112,15 @@ function EnsemblePrediction:translate(xs)
     local alpha = self.normLength
     
     for t = 1, T-1 do
+	collectgarbage()
         local curIdx = hypos[{{}, {t}}] -- t-th slice (column size K)
         local logProb = self:decodeAndCombinePredictions(curIdx,t)
 	--print(logProb[1])
         local maxscores, indices = logProb:topk(Nw, true)
         local curscores = scores:repeatTensor(1, Nw)
         maxscores:add(curscores)
-
+	print('+++')
+	print(indices)
         local _scores, flatIdx = maxscores:view(-1):topk(K, true)
         scores = _scores:view(-1, 1)
         local nr, nc = maxscores:size(1), maxscores:size(2)
