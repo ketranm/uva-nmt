@@ -110,6 +110,7 @@ function entropyConfidenceBinary()
 		end
 		return result
 	end
+	return comb
 end
 
 

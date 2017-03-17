@@ -9,7 +9,7 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     self.confidence:add(nn.Tanh())
     self.confidence:add(nn.Dropout(0.2))
     self.confidence:add(nn.Linear(hidSize,1))
-    self.confidence:add(nn.MulConstant(0.5))
+    --self.confidence:add(nn.MulConstant(0.5))
     self.confidence:add(nn.Sigmoid())
 
     if confidCriterion == 'MSE' then
@@ -32,8 +32,16 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     self.good = 0
     self.total = 0
     self.downweightOK = false 
-
+    if opt.downweightOK == 1 then
+	self.downweightOK = true 
+     	self.gradDownweight = opt.gradDownweight 
+    end
     self.correctBeam = opt.correctBeam
+    if opt.labelValue ~=nil  then		
+	self.labelValue = opt.labelValue
+    else 
+	self.labelValue = 'binary'
+    end
 end
 
 function Confidence:load(modelFile)
@@ -85,7 +93,7 @@ function Confidence:updateCounts()
 end
 function Confidence:forwardLoss(confidScore,logProb,target)
     if self.confidCriterionType == 'MSE' then 
-        local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.correctBeam,self.labelValue)
+        local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.labelValue)
         self.confidLoss = self.confidenceCriterion:forward(confidScore,correctPredictions)
         self.correctPredictions = correctPredictions:cuda()
 	self:updateCounts()
