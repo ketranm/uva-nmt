@@ -16,8 +16,15 @@ function BeamSearch:__init(opt)
 
     self._ignore = {[self.bosidx] = true, [self.eosidx] = true}
     self.normLength = opt.normLength or 1
+    
+    self.aggrEntr = 0
+    self.numPred = 0
 end
 
+function BeamSearch:getAveEnt()
+	local result = self.aggrEntr/self.numPred
+	return result
+end
 
 function BeamSearch:use(model)
     self.model = model
@@ -51,24 +58,34 @@ function decodeString(input, idx2word, ignore)
 end
 
 function prune(maxscores,indices)
-    function entropy(distrib)
-        local prob = torch.exp(distrib)
-        local result = torch.cmul(distrib,prob)
-        return torch.mul(result,-1)
-    end
-
     local currBeam = maxscores:size(1)
+    local threshold = 2 
     local pruneFactor = 1/2
-    local newBeam = currBeam*pruneFactor
-    local thresHold = 1
-    local approxEntropy = entropy(maxscores)
-    if approxEntropy < thresHold then
-        local newmaxscores,newindices = maxscores:topk(newBeam,true) 
-        return newmaxscores,newindices
-    else
-        return maxscores,indices
-    end
+    local pruneFrom = maxscores:size(2)*pruneFactor 
+    local newmaxscores = torch
+
+    for i=1,currBeam do
+	local ent = entropy(maxscores[i])
+	if ent  < threshold then
+		for j=pruneFrom,maxscores:size(2) do
+			maxscores[i][j] = -math.huge
+		end
+	end
+   end	
+   return maxscores,indices		
+		 
+	
 end
+
+function entropy(distrib)
+	--local result = 0
+	--for i=1,distrib:size(1) do
+	    local prob = torch.exp(distrib)
+      	    local result = -1 * torch.sum(torch.cmul(distrib,prob))
+
+	return result
+    end
+	
 
 function BeamSearch:run(x, maxLength)
     --[[
@@ -103,7 +120,14 @@ function BeamSearch:run(x, maxLength)
             logProb[{{2, K}, {}}]:fill(-math.huge)
         end
         local maxscores, indices = logProb:topk(Nw, true) -- prune here
-        --maxscores, indices = prune(maxscores, indices)
+    ----
+    --
+    --
+    --
+    --
+--    maxscores, indices = prune(maxscores, indices)
+        --self.aggrEntr = self.aggrEntr  + entropy(maxscores)
+	--self.numPred = self.numPred + maxscores:size(1)
         local curscores = scores:repeatTensor(1,Nw) 
         maxscores:add(curscores)
 
@@ -121,11 +145,11 @@ function BeamSearch:run(x, maxLength)
             --scores = scores:float()
             local cands = rowIdx:maskedSelect(xc)
             local completedHyps = hypos:index(1, cands):float():narrow(2, 1, t)
-	    local xscores = scores:maskedSelect(xc):view(-1)
+	         local xscores = scores:maskedSelect(xc):view(-1)
             --local xscores = scores:index(1, xc:type('torch.CudaLongTensor')):view(-1)
 	    --print(xscores:size())
             -- add to nbest
-            --xscores:div(t^alpha)
+            xscores:div(t^alpha)
             for i = 1, nx do
                 local text = decodeString(completedHyps[i], self.vocab[2].idx2word, self._ignore)
                 local s = xscores[i]

@@ -73,6 +73,8 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
         self.combinMachine = entropyConfidence()
     elseif self.combinMethod == 'entropyConfidenceBinary' then
         self.combinMachine = entropyConfidenceBinary()
+    elseif self.combinMethod == 'entropyConfidenceBinaryReverse' then
+        self.combinMachine = entropyConfidenceBinaryReverse()
     elseif self.combinMethod == 'scalarRandom' then
         self.combinMachine = combinMachine.randomScalarCombination(self.combinInput)
     elseif self.combinMethod == 'loglinCombination' then
@@ -116,6 +118,9 @@ function EnsemblePrediction:translate(xs)
         local curIdx = hypos[{{}, {t}}] -- t-th slice (column size K)
         local logProb = self:decodeAndCombinePredictions(curIdx,t)
 	--print(logProb[1])
+        if t == 1 then
+            logProb[{{2, K}, {}}]:fill(-math.huge)
+        end
         local maxscores, indices = logProb:topk(Nw, true)
         local curscores = scores:repeatTensor(1, Nw)
         maxscores:add(curscores)
