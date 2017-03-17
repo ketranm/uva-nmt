@@ -68,6 +68,8 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
         self.combinMachine = entropyConfidence()
     elseif self.combinMethod == 'entropyConfidenceBinary' then
         self.combinMachine = entropyConfidenceBinary()
+    elseif self.combinMethod == 'entropyConfidenceBinaryReverse' then
+        self.combinMachine = entropyConfidenceBinaryReverse()
     elseif self.combinMethod == 'scalarRandom' then
         self.combinMachine = combinMachine.randomScalarCombination(self.combinInput)
     elseif self.combinMethod == 'loglinCombination' then
