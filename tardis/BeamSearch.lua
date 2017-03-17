@@ -103,7 +103,7 @@ function BeamSearch:run(x, maxLength)
         end
         local maxscores, indices = logProb:topk(Nw, true) -- prune here
         maxscores, indices = prune(maxscores, indices)
-        local curscores = scores:repeatTensor(1, maxscores:size(1))
+        local curscores = scores:repeatTensor(1, Nw)
         maxscores:add(curscores)
 
         local _scores, flatIdx = maxscores:view(-1):topk(K, true)
@@ -120,11 +120,11 @@ function BeamSearch:run(x, maxLength)
             --scores = scores:float()
             local cands = rowIdx:maskedSelect(xc)
             local completedHyps = hypos:index(1, cands):float():narrow(2, 1, t)
-	    local xscores = scores:maskedSelect(xc):view(-1)
+	         local xscores = scores:maskedSelect(xc):view(-1)
             --local xscores = scores:index(1, xc:type('torch.CudaLongTensor')):view(-1)
 	    --print(xscores:size())
             -- add to nbest
-            --xscores:div(t^alpha)
+            xscores:div(t^alpha)
             for i = 1, nx do
                 local text = decodeString(completedHyps[i], self.vocab[2].idx2word, self._ignore)
                 local s = xscores[i]
