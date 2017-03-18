@@ -134,7 +134,7 @@ function EnsemblePrediction:translate(xs)
             local xscores = scores:maskedSelect(xc):view(-1)
 
             -- add to nbest
-            xscores:div(t^alpha)
+            --xscores:div(t^alpha)
             for i = 1, nx do
                 local text = decodeString(completedHyps[i], self.vocabs[1][2].idx2word, self._ignore)
                 local s = xscores[i]
@@ -161,7 +161,7 @@ function EnsemblePrediction:translate(xs)
     if #nbestCands == 0 then
         assert(K == self.K)
         scores = scores:view(-1)
-        scores:div(T^alpha)
+        --scores:div(T^alpha)
         for i = 1, K do
             local text = decodeString(hypos[i], self.vocabs[1][2].idx2word, self._ignore)
             table.insert(nbestCands, text)
