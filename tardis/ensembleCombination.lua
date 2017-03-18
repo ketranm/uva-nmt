@@ -135,7 +135,8 @@ end
 
 
 function confidenceMixture(confidenceScoreCombination)
-	local combination = confidenceMixture
+	--local combination = 'arithmAve' 
+	local combination = 'softmax' 
 
 	function computeCombinationWeights(confidScores)
 		if combination == 'arithmAve' then
@@ -144,20 +145,24 @@ function confidenceMixture(confidenceScoreCombination)
 			local logNormWeights = _.map(confidScores,function(i,v) return torch.log(v)-norm end)
 			return logNormWeights
 		elseif combination == 'softmax' then
-			local norm = logSumExp2(torch.Tensor(confidScores))
+			local norm = logSumExp2(torch.cat(confidScores))
 			local logNormWeights = _.map(confidScores,function(i,v) return v - norm end)
 			return logNormWeights
 		end
 	end	
 			
 	function comb(tableOutputs,confidScores)
+		--[[print(confidScores[1])
+		print(confidScores[2])
+		print('---')]]---
 		local logCombinWeights = computeCombinationWeights(confidScores)
-		local weigtedExperts = _.map(tableOutputs, function(i,v) return v:add(logCombinWeights[i]) end)
+		local weigtedExperts = _.map(tableOutputs, function(i,v) return v:add(logCombinWeights[i]:expandAs(v)) end)
 		local secondAdd  = torch.exp(weigtedExperts[2]-weigtedExperts[1])
 		local oneTensor = torch.CudaTensor(secondAdd:size()):fill(1.0)
 		secondAdd = torch.log(secondAdd+oneTensor)
 		return weigtedExperts[1] + secondAdd
 	end
+	return comb
 end
 
 
