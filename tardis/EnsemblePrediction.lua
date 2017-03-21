@@ -26,7 +26,12 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
     self.numModels = 0
     for i,model_kwargs in ipairs(multiKwargs) do 
        self.numModels = self.numModels + 1
-        local vocab = torch.load(model_kwargs.dataPath..'/vocab.t7')
+        local vocab = nil 
+	if model_kwargs.useTargetVocab ~=nil then
+		vocab = torch.load(model_kwargs.useTargetVocab)
+	else
+		vocab = torch.load(model_kwargs.dataPath..'/vocab.t7')
+	end
         local m = nil
         if self.combinMethod == 'confidPrediction' then
 	    m1 = nn.NMT(model_kwargs)
@@ -121,6 +126,7 @@ function EnsemblePrediction:translate(xs)
         if t == 1 then
             logProb[{{2, K}, {}}]:fill(-math.huge)
         end
+	--print(logProb[1])
         local maxscores, indices = logProb:topk(Nw, true)
         local curscores = scores:repeatTensor(1, Nw)
         maxscores:add(curscores)
