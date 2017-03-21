@@ -92,6 +92,80 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
     return self
 end
 
+function EnsemblePrediction:forwardAndComputeOutputOverlap(xs,prev_y,K_vector)
+    local logProbs = {}
+    for i,m in ipairs(self.models) do
+        m:stepEncoder(xs[i])
+        local logProb = m:stepDecoder(prev_y)
+        table.insert(logProbs,logProb)
+    end
+
+    function computeIntersectingClasses(kbestClasses)
+        local indices_1 = {}
+        local indices_2 = {}
+
+        local numInstances = kbestClasses[1]:size(1)
+        local numClasses = kbestClasses[1]:size(2)
+        for i=1,numInstances do 
+            local perInstanceIndices_1 = {}
+            local perInstanceIndices_2 = {}
+            for clInd=1,numClasses do
+                local class_1 = kbestClasses[1][i][j]
+                for l=1,numClasses do
+                    if class_1 == kbestClasses[2][i][l] then 
+                        table.insert(perInstanceIndices_1,j)
+                        table.insert(perInstanceIndices_2,l)
+                        break
+                    end
+                end
+            end
+            table.insert(indices_1,perInstanceIndices_1)
+            table.insert(indices_2,perInstanceIndices_2)
+        end
+        return indices_1,indices_2
+    end
+
+    function topkKL(lprobs,intersectClassIndices)
+        local prob_1 = torch.exp(lprobs[1])
+        local entr_1 = (-1) * torch.sum(torch.cmul(prob,lprobs[1]),2)
+        crossEntr_1_2 = torch.zeros(lprobs[1]:size(1))
+        for i=1,#intersectClassIndices do
+            local intanceIntersectInd_1 = intersectClassIndices[1][i]
+            local intanceIntersectInd_2 = intersectClassIndices[2][i]
+            local prob = prob_1[i]
+            for j=1,#intanceIntersectInd_1 do
+                crossEntr_1_2[i] = (-1) * _.reduce(intanceIntersectInd_1,function(n,v) return memo+prob[v]*lprobs[2][perInstanceIndices_2[n]] end)
+            end
+        end
+        return entr_1+crossEntr_1_2
+
+    end
+
+    function topkSymKL(lprobs,classes)
+        local intersectClassInd_1,intersectClassInd_2 = computeIntersectingClasses(classes)        
+        local KL_1 = topkKL(lprobs,{intersectClassInd_1,intersectClassInd_2})
+        local KL_2 = topkKL({lprobs[2],lprobs[1]},{intersectClassInd_2,intersectClassInd_1})
+        local overlap = _.reduce(intersectClassInd_1,function(i,v) return memo + #v end)
+        return {torch.sum(KL_1),torch.sum(KL_2)},overlap
+    end
+
+    local classOverlap = {}
+    local symKL = {}
+    for _,k in ipairs(K_vector) do
+        local topKLogProb = {}
+        local topKIndices = {}
+        for l in logProbs do
+            local valsK,indK = l:topk(k,true)
+            table.insert(topKLogProb,valsK)
+            table.insert(topKIndices,indK)
+        end
+        local KL_tuple,overlap = topkSymKL(topKLogProb,topKIndices)
+        symKL[k] = 
+        classOverlap[k] = overlap
+    end
+
+    return classOverlap,symKL
+end
 
 function EnsemblePrediction:translate(xs)
     for i,m in ipairs(self.models) do 
@@ -177,6 +251,7 @@ function EnsemblePrediction:translate(xs)
     return nbestCands[idx[1]]
 
 end
+
 
 
 function EnsemblePrediction:decodeAndCombinePredictions(curIdx,timeStep)
