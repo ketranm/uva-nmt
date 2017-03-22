@@ -1,4 +1,5 @@
 require 'tardis.PairwiseLoss'
+require 'tardis.topKDistribution'
 local utils = require 'misc.utils'
 local Confidence, parent = torch.class('nn.Confidence', 'nn.Module')
 
@@ -14,6 +15,9 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
 
     if confidCriterion == 'MSE' then
         self.confidenceCriterion = nn.MSECriterion()
+    elseif confidCriterion == 'mixtureRandomGuessTopK' then
+    	self.K = opt.K
+    	self.confidenceCriterion = nn.ClassNLLCriterion()
     elseif confidCriterion == 'mixtureCrossEnt' then
         self.confidenceCriterion = nn.ClassNLLCriterion()
     elseif confidCriterion == 'pairwise' then
@@ -91,12 +95,18 @@ function Confidence:updateCounts()
 	self.good = self.good + good
 	self.total = self.total + total
 end
+
 function Confidence:forwardLoss(confidScore,logProb,target)
     if self.confidCriterionType == 'MSE' then 
         local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.labelValue)
         self.confidLoss = self.confidenceCriterion:forward(confidScore,correctPredictions)
         self.correctPredictions = correctPredictions:cuda()
-	self:updateCounts()
+		self:updateCounts()
+
+	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
+		self.unifKDistr,self.unifValue = topKUniform(logProb,self.K)
+		self.confidMix = computeMixDistr(self.confidScore,logProb,self.unifKDistr)
+		self.confidLoss = self.confidenceCriterion:forward(self.confidMix,target)
         
     elseif self.confidCriterionType == 'mixtureCrossEnt' then
         local oracleMixtureDistr = computeOracleMixtureDistr(self.confidScore,self.logProb,target)
@@ -104,7 +114,7 @@ function Confidence:forwardLoss(confidScore,logProb,target)
         self.confidLoss = self.confidenceCriterion:forward(oracleMixtureDistr,target)
     elseif self.confidCriterionType == 'pairwise' then
 	--local confidLogProb = torch.add(logProb,torch.log(self.confidScore:expand(logProb:size())))
-	local confidLoss_1 = self.confidenceCriterion_1:forward(confidScore,logProb,target)
+		local confidLoss_1 = self.confidenceCriterion_1:forward(confidScore,logProb,target)
         local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.correctBeam)
         local confidLoss_2 = self.confidenceCriterion_2:forward(confidScore,correctPredictions)
 	self.confidLoss = confidLoss_2
@@ -113,6 +123,15 @@ function Confidence:forwardLoss(confidScore,logProb,target)
     end 
 end
 
+
+function computeMixDistr(weight,logProb1,logProb2)
+    local logWeight = torch.log(weight):expandAs(logProb) -- tensor
+    local logSecondWeight = torch.log(1 - weight)
+    local firstAdd = logProb1 + logWeight
+    local diff = logSecondWeight + logProb2 - firstAdd
+    local result = firstAdd + torch.log(torch.exp(diff) + 1)
+    return result
+end
 
 function computeOracleMixtureDistr(weight,logProb,target)
     local logWeight = torch.log(weight):expandAs(logProb) -- tensor
@@ -129,6 +148,26 @@ function Confidence:backward(inputState,target,logProb)
    	local gradConfidCriterion = nil
 	if self.confidCriterionType == 'MSE' then 
 		gradConfidCriterion = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions)
+	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
+		gradConfidCriterion = torch.zeros(target:size())
+		local topPr,ind = logProb:topk(self.K,true)
+		for i=1,target:size(1) do
+			local corrClass = target[i]
+			for j=1,self.K do
+				if ind[i][j] == corrClass then 
+					gradConfidCriterion[i] = 1
+					break
+				end
+			end
+		end
+
+		local gradMixture = self.confidenceCriterion:backward(self.confidMix,target)
+		self.confidMix = torch.exp(torch.sum(torch.cmul(self.confidMix,gradMixture)),2))
+		gradConfidCriterion:cdiv(self.confidMix)
+		local prCorr = torch.exp(torch.mul(torch.cmul(gradMixture,logProb),-1))
+		local prUnif = torch.Tensor(prCorr:size()):fill(torch.exp(self.unifValue))
+		gradConfidCriterion:cmul(prCorr-prUnif)
+
 	elseif self.confidCriterionType == 'mixtureCrossEnt' then
 		gradConfidCriterion = self.confidenceCriterion:backward(self.oracleMixtureDistr,target:view(-1))
 	elseif self.confidCriterionType == 'pairwise' then
