@@ -104,7 +104,9 @@ function Confidence:forwardLoss(confidScore,logProb,target)
 		self:updateCounts()
 
 	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
-		self.unifKDistr,self.unifValue = topKUniform(logProb,self.K)
+		--self.unifKDistr,self.unifValue = topKUniform(logProb,self.K)
+		self.unifValue = -1*torch.log(30000)
+		self.unifKDistr = torch.CudaTensor(logProb:size()):fill(self.unifValue)
 		self.confidMix = computeMixDistr(confidScore,logProb,self.unifKDistr)
 		self.confidLoss = (self.confidenceCriterion:forward(self.confidMix,target))/logProb:size(1)
         
@@ -149,8 +151,8 @@ function Confidence:backward(inputState,target,logProb)
 	if self.confidCriterionType == 'MSE' then 
 		gradConfidCriterion = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions)
 	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
-		gradConfidCriterion = torch.zeros(target:size())
-		local topPr,ind = logProb:topk(self.K,true)
+		gradConfidCriterion = torch.ones(target:size())
+		--[[local topPr,ind = logProb:topk(self.K,true)
 		for i=1,target:size(1) do
 			local corrClass = target[i]
 			for j=1,self.K do
@@ -159,7 +161,7 @@ function Confidence:backward(inputState,target,logProb)
 					break
 				end
 			end
-		end
+		end]]--
 
 		local gradOutputDistr = self.confidenceCriterion:backward(self.confidMix,target:view(-1))
 		local gradMixture = torch.cmul(gradOutputDistr,self.confidMix)	
