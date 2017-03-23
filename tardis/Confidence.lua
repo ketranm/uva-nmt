@@ -17,7 +17,7 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
         self.confidenceCriterion = nn.MSECriterion()
     elseif confidCriterion == 'mixtureRandomGuessTopK' then
     	self.K = opt.K
-    	self.confidenceCriterion = nn.ClassNLLCriterion()
+    	self.confidenceCriterion = nn.ClassNLLCriterion(false,false)
     elseif confidCriterion == 'mixtureCrossEnt' then
         self.confidenceCriterion = nn.ClassNLLCriterion()
     elseif confidCriterion == 'pairwise' then
@@ -105,11 +105,11 @@ function Confidence:forwardLoss(confidScore,logProb,target)
 
 	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
 		self.unifKDistr,self.unifValue = topKUniform(logProb,self.K)
-		self.confidMix = computeMixDistr(self.confidScore,logProb,self.unifKDistr)
-		self.confidLoss = self.confidenceCriterion:forward(self.confidMix,target)
+		self.confidMix = computeMixDistr(confidScore,logProb,self.unifKDistr)
+		self.confidLoss = (self.confidenceCriterion:forward(self.confidMix,target))/logProb:size(1)
         
     elseif self.confidCriterionType == 'mixtureCrossEnt' then
-        local oracleMixtureDistr = computeOracleMixtureDistr(self.confidScore,self.logProb,target)
+        local oracleMixtureDistr = computeOracleMixtureDistr(confidScore,self.logProb,target)
         self.oracleMixtureDistr = oracleMixtureDistr
         self.confidLoss = self.confidenceCriterion:forward(oracleMixtureDistr,target)
     elseif self.confidCriterionType == 'pairwise' then
@@ -125,10 +125,10 @@ end
 
 
 function computeMixDistr(weight,logProb1,logProb2)
-    local logWeight = torch.log(weight):expandAs(logProb) -- tensor
+    local logWeight = torch.log(weight):expandAs(logProb1) -- tensor
     local logSecondWeight = torch.log(1 - weight)
     local firstAdd = logProb1 + logWeight
-    local diff = logSecondWeight + logProb2 - firstAdd
+    local diff = logSecondWeight:expand(logProb2:size()) + logProb2 - firstAdd
     local result = firstAdd + torch.log(torch.exp(diff) + 1)
     return result
 end
@@ -161,11 +161,14 @@ function Confidence:backward(inputState,target,logProb)
 			end
 		end
 
-		local gradMixture = self.confidenceCriterion:backward(self.confidMix,target)
-		self.confidMix = torch.exp(torch.sum(torch.cmul(self.confidMix,gradMixture)),2))
+		local gradOutputDistr = self.confidenceCriterion:backward(self.confidMix,target:view(-1))
+		local gradMixture = torch.cmul(gradOutputDistr,self.confidMix)	
+		local gradLogprob = torch.cmul(gradOutputDistr,logProb) 
+		self.confidMix = torch.exp(torch.sum(torch.mul(gradMixture,-1),2))
+		gradConfidCriterion = gradConfidCriterion:cuda()
 		gradConfidCriterion:cdiv(self.confidMix)
-		local prCorr = torch.exp(torch.mul(torch.cmul(gradMixture,logProb),-1))
-		local prUnif = torch.Tensor(prCorr:size()):fill(torch.exp(self.unifValue))
+		local prCorr = torch.mul(torch.sum(gradLogprob,2),-1)
+		local prUnif = torch.exp(self.unifValue)
 		gradConfidCriterion:cmul(prCorr-prUnif)
 
 	elseif self.confidCriterionType == 'mixtureCrossEnt' then

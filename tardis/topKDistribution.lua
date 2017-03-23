@@ -4,9 +4,9 @@ function computeUniformLog(topDistr)
 	local denom = torch.Tensor(topDistr:size(1),1):fill(torch.log(topDistr:size(2)))
 	local max,ind = topDistr:topk(1,true)
 	max = max:expand(topDistr:size())
-	local diff = topDistr - max
+	local diff = topDistr - max:expand(topDistr:size())
 	local logsumexp = max[{{},{1}}] + torch.log(torch.sum(torch.exp(diff),2))
-	local logKUniform = logsumexp - denom
+	local logKUniform = logsumexp:csub(denom:cuda())
 	return logKUniform
 end
 

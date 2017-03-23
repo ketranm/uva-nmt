@@ -25,16 +25,17 @@ end
 function getTopKDistributionNonZero(output,topK)
 	local _,indices = output:topk(topK,true)
 	local result = torch.zeros(output:size())
-	for i=1,topK do
-		result[indices[i]] = 1
-		output[indices]
+	for i=1,output:size(1) do
+		for j=1,topK do
+		result[i][indices[i][j]] = 1
+		end
 	end
-	return result
+	return result:cuda()
 end
 
 function EntropyConstraint:forward(logProb)
 
-	local inputLogProb = logProb:view(-1)
+	local inputLogProb = logProb
 	local probDistr = torch.exp(inputLogProb)
 	if self.approxEntropyK > 0 then
 		probDistr = torch.cmul(probDistr,getTopKDistributionNonZero(inputLogProb,self.approxEntropyK))

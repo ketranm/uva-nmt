@@ -70,7 +70,7 @@ end
 
 function entropyConfidence()
 	local temperature = 1
-	local topK = 20
+	local topK = 5 
 	
 	function comb(tableOutputs)
 		collectgarbage()
@@ -136,7 +136,7 @@ end
 
 function confidenceMixture(confidenceScoreCombination)
 	--local combination = 'arithmAve' 
-	local combination = 'softmax' 
+	local combination = 'arithmAve' 
 
 	function computeCombinationWeights(confidScores)
 		if combination == 'arithmAve' then
