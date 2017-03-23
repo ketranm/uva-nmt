@@ -109,11 +109,19 @@ function Confidence:forwardLoss(confidScore,logProb,target)
 
 	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
 		--self.unifKDistr,self.unifValue = topKUniform(logProb,self.K)
+		local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.labelValue
+		self.correctPredictions = correctPredictions
 		self.unifValue = -1*torch.log(30000)
 		self.unifKDistr = torch.CudaTensor(logProb:size()):fill(self.unifValue)
 		self.confidMix = computeMixDistr(confidScore,logProb,self.unifKDistr)
-		self.confidLoss = (self.confidenceCriterion:forward(self.confidMix,target))/logProb:size(1)
-        
+		local confidLoss = (self.confidenceCriterion:forward(self.confidMix,target))/logProb:size(1)
+		self.confidLoss = {}
+		table.insert(self.confidLoss,confidLoss)
+		if self.matchingObjective == 1 then
+        	local matchingLoss = self.matchingObjective:forward(self.confidScore,self.correctPredictions)
+        	table.insert(self.confidLoss,matchingLoss)
+        end
+
     elseif self.confidCriterionType == 'mixtureCrossEnt' then
         local oracleMixtureDistr = computeOracleMixtureDistr(confidScore,self.logProb,target)
         self.oracleMixtureDistr = oracleMixtureDistr
