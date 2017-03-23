@@ -18,6 +18,10 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     elseif confidCriterion == 'mixtureRandomGuessTopK' then
     	self.K = opt.K
     	self.confidenceCriterion = nn.ClassNLLCriterion(false,false)
+    	if opt.matchingObjective == 1 then
+    		self.matchingObjective = 1
+    		self.matchingObjective = nn.MSECriterion()
+    	end
     elseif confidCriterion == 'mixtureCrossEnt' then
         self.confidenceCriterion = nn.ClassNLLCriterion()
     elseif confidCriterion == 'pairwise' then
@@ -173,6 +177,12 @@ function Confidence:backward(inputState,target,logProb)
 		local prUnif = torch.exp(self.unifValue)
 		gradConfidCriterion:cmul(prCorr-prUnif)
 
+		if self.matchingObjective == 1 then
+			local correctPredictions = utils.extractCorrectPredictions(logProb,target,'binary')
+			local matchingGradient = self.matchingObjective:backward(self.confidScore,correctPredictions)
+			gradConfidCriterion = 0.5 *(gradConfidCriterion/logProb:size(1)) + 0.5 * matchingGradient
+		end
+		
 	elseif self.confidCriterionType == 'mixtureCrossEnt' then
 		gradConfidCriterion = self.confidenceCriterion:backward(self.oracleMixtureDistr,target:view(-1))
 	elseif self.confidCriterionType == 'pairwise' then
