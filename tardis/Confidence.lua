@@ -11,9 +11,11 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     self.confidence:add(nn.Linear(hidSize,1))
     --self.confidence:add(nn.MulConstant(0.5))
     self.confidence:add(nn.Sigmoid())
+    --self.confidence:add(nn.LogSoftMax())
 
     if confidCriterion == 'MSE' then
         self.confidenceCriterion = nn.MSECriterion()
+        --self.confidenceCriterion = nn.ClassNLLCriterion(torch.ones(2),true)
     elseif confidCriterion == 'mixtureCrossEnt' then
         self.confidenceCriterion = nn.ClassNLLCriterion()
     elseif confidCriterion == 'pairwise' then
@@ -21,12 +23,6 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
         self.confidenceCriterion_2 = nn.MSECriterion()
     end
     self.confidCriterionType = confidCriterion
-    
-    if opt.labelValue ~=nil then
-    	self.labelValue = opt.labelValue
-    else
-    	self.labelValue = 'binary'
-    end
     self.downweightBAD = false 
     self.gradDownweight = 0.5
     self.good = 0
@@ -42,8 +38,16 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     else 
 	self.labelValue = 'binary'
     end
+    print('LABEL'..self.labelValue)
 end
-
+function Confidence:setLabelValue(opt) 
+	if opt.label ~=nil then
+		self.labelValue = opt.labelValue
+    	else 
+		self.labelValue = 'binary'
+    	end
+end
+	
 function Confidence:load(modelFile)
 	self.confidence = torch.load(modelFile)
 end
@@ -93,7 +97,7 @@ function Confidence:updateCounts()
 end
 function Confidence:forwardLoss(confidScore,logProb,target)
     if self.confidCriterionType == 'MSE' then 
-        local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.labelValue)
+        local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.labelValue,self.correctBeam)
         self.confidLoss = self.confidenceCriterion:forward(confidScore,correctPredictions)
         self.correctPredictions = correctPredictions:cuda()
 	self:updateCounts()
