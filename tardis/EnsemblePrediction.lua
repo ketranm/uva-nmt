@@ -179,6 +179,19 @@ function EnsemblePrediction:forwardAndComputeOutputOverlap(xs,prev_y,K_vector)
     return classOverlap,symKL
 end
 
+
+function EnsemblePrediction:forwardAndOutputDistributions(xs,prev_y) 
+    local logProbs = {}
+    for i,m in ipairs(self.models) do
+        m:stepEncoder(xs[i])
+        local logProb = m:stepDecoder(prev_y)
+        table.insert(logProbs,logProb)
+    end
+    local ensLogprob = self.combinMachine(logProbs)
+    table.insert(logProbs,ensLogprob)
+    return logProbs
+end
+
 function EnsemblePrediction:translate(xs)
     for i,m in ipairs(self.models) do 
         m:clearState() 
@@ -264,6 +277,7 @@ function EnsemblePrediction:translate(xs)
     return nbestCands[idx[1]]
 
 end
+
 
 
 
