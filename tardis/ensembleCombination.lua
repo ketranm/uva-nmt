@@ -70,7 +70,7 @@ end
 
 function entropyConfidence()
 	local temperature = 1
-	local topK = 10
+	local topK = 5 
 	
 	function comb(tableOutputs)
 		collectgarbage()
@@ -92,6 +92,26 @@ function entropyConfidence()
 	return comb
 end
 
+function entropyConfidenceBinaryReverse()
+	local topK = 10
+
+	function comb(tableOutputs)
+		local tableOutputs_topk = tableOutputs
+		if topK > 0 then
+			tableOutputs_topk =  getTopKDistributions(tableOutputs,topK)
+		end
+		local negEntropies = torch.cat(_.map(tableOutputs_topk,function(i,v) return negEntropy(v) end))
+
+		local result = tableOutputs[1]
+		for i=1,negEntropies:size(1) do
+			if negEntropies[1][i] >  negEntropies[2][i] then
+				result[i] = tableOutputs[2][i]
+			end
+		end
+		return result
+	end
+	return comb
+end
 function entropyConfidenceBinary()
 	local topK = 10
 
@@ -116,7 +136,7 @@ end
 
 function confidenceMixture(confidenceScoreCombination)
 	--local combination = 'arithmAve' 
-	local combination = 'softmax' 
+	local combination = 'arithmAve' 
 
 	function computeCombinationWeights(confidScores)
 		if combination == 'arithmAve' then

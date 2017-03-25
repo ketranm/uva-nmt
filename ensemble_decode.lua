@@ -10,7 +10,6 @@ local cfg = require 'pl.config'
 local opt = cfg.read(arg[1])
 local multiOpt = {}
 for c in opt.configFiles:gmatch("%S+") do
-
 	local indivOpt =  cfg.read(c)
 	indivOpt.padIdx = 1
 	table.insert(multiOpt,indivOpt)
@@ -25,9 +24,9 @@ io:flush()
 
 
 local ensemble = EnsemblePrediction(opt,multiOpt)
-collectgarbage()
-local transFilename =  opt.transFile or 'translation.txt'
-local outfile = io.open(transFilename,"w")
+
+local transFile =  opt.transFile or 'translation.txt'
+local outfile = io.open(transFile,'w')
 local multiSrcLoader = MultiDataLoader.newTestLoader(multiOpt)
 local nlines = 0   
 while true do

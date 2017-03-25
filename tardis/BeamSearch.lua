@@ -149,7 +149,7 @@ function BeamSearch:run(x, maxLength)
             --local xscores = scores:index(1, xc:type('torch.CudaLongTensor')):view(-1)
 	    --print(xscores:size())
             -- add to nbest
-            xscores:div(t^alpha)
+            --xscores:div(t^alpha)
             for i = 1, nx do
                 local text = decodeString(completedHyps[i], self.vocab[2].idx2word, self._ignore)
                 local s = xscores[i]
@@ -175,7 +175,7 @@ function BeamSearch:run(x, maxLength)
     if #nbestCands == 0 then
         assert(K == self.K)
         scores = scores:view(-1)
-        scores:div(T^alpha)
+        --scores:div(T^alpha)
         for i = 1, K do
             local text = decodeString(hypos[i], self.vocab[2].idx2word, self._ignore)
             table.insert(nbestCands, text)

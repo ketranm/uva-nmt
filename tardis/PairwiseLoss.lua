@@ -48,8 +48,11 @@ end
 function PairwiseLoss:backward(logProb)
     local bestValues,bestPredictions = logProb:topk(1,true)
     if self.pairwiseDiff == 'arithm' then
-	local diff = logNegExp2(torch.FloatTensor.cat({bestValues:float(),self.correctScores:view(-1,1)}))
-	
+--	local diff = logNegExp2(torch.FloatTensor.cat({bestValues:float(),self.correctScores:view(-1,1)}))
+	local diff =  torch.mul(bestValues:float() - self.correctScores:view(-1,1) ,1/torch.log(30000))
+
+--logNegExp2(torch.FloatTensor.cat({self.correctScores:view(-1,1),bestValues:float()}))
+	--print(diff[1])
         return torch.exp(diff):cuda()
     end
     --bestValues = bestValues:view(-1):csub(self.correctScores)

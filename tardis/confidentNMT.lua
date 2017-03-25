@@ -47,7 +47,7 @@ function NMT:__init(opt)
     self.padIdx = opt.padIdx
     self.maxNorm = opt.maxNorm or 5
     -- for optim
-    self.optimConfig = {learningRate = 0.002, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0.0001}
+    self.optimConfig = {learningRate = 0.001, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0.0001}
     self.optimStates = {}
 
 

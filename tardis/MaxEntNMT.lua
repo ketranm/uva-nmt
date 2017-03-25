@@ -14,26 +14,31 @@ local NMT, parent = torch.class('nn.MaxEntNMT', 'nn.NMT')
 
 function NMT:__init(opt)
     -- build encoder
-    parent.__init(opt)
+    parent.__init(self,opt)
     
     self.entropyConstraint = nn.EntropyConstraint(opt)
     self.entropyConstraintWeight = opt.entropyConstraintWeight
     if self.entropyConstraintWeight == nil then
         self.entropyConstraintWeight = 1.0
     end
+    print(self)
 end
 
 function NMT:forward(input,target)
-    local ppl = parent.forward(input,target)
-    local entropy = torch.mul(self.entropyConstraint(self.logProb),self.entropyConstraintWeight)
+    local ppl = parent.forward(self,input,target)
+    self.ppl = ppl
+    local entropy = self.entropyConstraint:forward(self.logProb) * self.entropyConstraintWeight
     return ppl,entropy
 end
 
 function NMT:backward(input,target)
     self.gradParams:zero()
     local gradXent = self.criterion:backward(self.logProb, target:view(-1))
-    local gradEntropy = torch.mul(self.entropyConstraint:backward(self.logProb),self.entropyConstraintWeight))
-    local gradLayer = self.layer:backward({self.cntx, self.decOutput}, gradXent+gradEntropy)
+    local gradEntropy = torch.mul(self.entropyConstraint:backward(self.logProb),self.entropyConstraintWeight)
+    if self.ppl < 3 then
+	gradXent = gradXent - gradEntropy
+    end 
+    local gradLayer = self.layer:backward({self.cntx, self.decOutput}, gradXent)
     local gradDecoder = gradLayer[2] -- grad to decoder
     local gradGlimpse =
         self.glimpse:backward({self.encOutput, self.decOutput}, gradLayer[1])
