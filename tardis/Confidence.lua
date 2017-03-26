@@ -172,9 +172,10 @@ function Confidence:forwardLoss(confidScore,logProb,target)
 		local confidLoss = self.confidenceCriterion:forward(self.confidMix:cuda(),target:cuda()) --/logProb:size(1)
 		self.confidLoss = {}
 		table.insert(self.confidLoss,confidLoss)
-        	local matchingLoss = self.matchingCriterion:forward(confidScore,self.correctPredictions)
+		if self.matchingObjective == 1 then 
+        	local matchingLoss = self.matchingObjective:forward(self.confidScore,self.correctPredictions)
         	table.insert(self.confidLoss,matchingLoss)
-        
+		end
 
     elseif self.confidCriterionType == 'mixtureCrossEnt' then
         local oracleMixtureDistr = computeOracleMixtureDistr(confidScore,self.logProb,target)
