@@ -5,8 +5,13 @@ local Confidence, parent = torch.class('nn.Confidence', 'nn.Module')
 
 function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     self.confidence = nn.Sequential()
-    self.confidence:add(nn.Linear(inputSize,hidSize))
     self.confidence:add(nn.Dropout(0.2))
+    self.confidence:add(nn.Linear(inputSize,hidSize))
+    self.confidence:add(nn.Tanh())
+    self.confidence:add(nn.Dropout(0.2))
+    self.confidence:add(nn.Linear(hidSize,hidSize))
+    self.confidence:add(nn.Tanh())
+    self.confidence:add(nn.Linear(hidSize,hidSize))
     self.confidence:add(nn.Tanh())
     self.confidence:add(nn.Dropout(0.2))
     self.confidence:add(nn.Linear(hidSize,1))
@@ -113,7 +118,7 @@ function Confidence:forwardLoss(confidScore,logProb,target)
 
 	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
 		--self.unifKDistr,self.unifValue = topKUniform(logProb,self.K)
-		local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.labelValue
+		local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.labelValue)
 		self.correctPredictions = correctPredictions
 		self.unifValue = -1*torch.log(30000)
 		self.unifKDistr = torch.CudaTensor(logProb:size()):fill(self.unifValue)
@@ -121,10 +126,10 @@ function Confidence:forwardLoss(confidScore,logProb,target)
 		local confidLoss = (self.confidenceCriterion:forward(self.confidMix,target))/logProb:size(1)
 		self.confidLoss = {}
 		table.insert(self.confidLoss,confidLoss)
-		if self.matchingObjective == 1 then
+		if self.matchingObjective == 1 then 
         	local matchingLoss = self.matchingObjective:forward(self.confidScore,self.correctPredictions)
         	table.insert(self.confidLoss,matchingLoss)
-        end
+		end
 
     elseif self.confidCriterionType == 'mixtureCrossEnt' then
         local oracleMixtureDistr = computeOracleMixtureDistr(confidScore,self.logProb,target)
