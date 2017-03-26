@@ -25,19 +25,20 @@ opt.padIdx = loader.padIdx
 require 'tardis.confidentNMT'
 local model = nn.confidentNMT(opt)
 model:type('torch.CudaTensor')
+
 if opt.trainingScenario == 'confidenceMechanism' then
-    if opt.confidenceModelToLoad ~=nil then
-	model:load(opt.confidenceModelToLoad)
-    else
-    print('t1') 
     local pretrainedModel = nn.NMT(opt)
     pretrainedModel:type('torch.CudaTensor')
     pretrainedModel:load(opt.modelToLoad)
     print('t2')
     model:loadModelWithoutConfidence(pretrainedModel)
     print('t3')
-    end 
 end
+if opt.confidenceModelToLoad ~=nil then
+	print('TT')
+	model:loadConfidence(opt.confidenceModelToLoad)
+	model.confidence:setLabelValue(opt)
+end	
 -- prepare data
 function prepro(input)
     local x, y = unpack(input)
@@ -57,6 +58,9 @@ function train()
         loader:train()
         model:evaluate()
         model.confidence:training()
+	if opt.trainingScenario == 'joint' then
+		model:training()
+	end
         local nll = 0
  	local confidMSE = 0
 	local aveLoss = 0 
@@ -65,13 +69,16 @@ function train()
         timer:reset()
         print('learningRate: ', opt.learningRate)
         print('number of batches', nbatches)
-        for i = 1, nbatches do
+	model.confidence:clearStatistics()
+        for i = 1,nbatches do
+            collectgarbage()
             local x, prev_y, next_y = prepro(loader:next())
             model:clearState()
 	    local new_nll,confidLoss = model:optimize({x,prev_y},next_y)
 	    --local new_nll,confidLoss = model:forward({x,prev_y},next_y)
 	    --model:backward({x,prev_y},next_y)
  	    --model:update(opt.learningRate)
+	    local shareGood,shareBad = model:correctStatistics()
             nll = nll + new_nll
 	    confidMSE = confidMSE + confidLoss
 	    nupdates = nupdates + 1
@@ -83,7 +90,7 @@ function train()
                 --local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i),confidMSE/i,aveLoss/i, totwords / timer:time().real, nupdates/1000}
                 local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i), confidMSE/i, totwords / timer:time().real, nupdates/1000}
                 print(string.format(unpack(args)))
-                collectgarbage()
+	    print('correct label stats: OK '..shareGood..' BAD '..shareBad)
             end
         end
         if epoch >= opt.decayAfter then
@@ -93,14 +100,15 @@ function train()
         loader:valid()
         model:evaluate()
         model.confidence:evaluate()
-	print('test')
         local mse = 0 -- validation loss
+	local nll = 0
         local nbatches = loader.nbatches
         for i = 1, nbatches do
             model:clearState()
             local x, prev_y, next_y = prepro(loader:next())
-	    local new_nll,confidLoss = forward({x, prev_y}, next_y:view(-1))
-            mse = mse + model:forward({x, prev_y}, next_y:view(-1))
+	    local new_nll,confidLoss = model:forward({x, prev_y}, next_y:view(-1))
+	    nll = nll + new_nll
+            mse = mse + confidLoss 
             if i % 50 == 0 then collectgarbage() end
         end
 
@@ -114,14 +122,13 @@ function train()
         paths.mkdir(paths.dirname(modelFile))
         model:save(modelFile)
 
-        local msg = '\nvalidation\nEpoch %d valid mse %.4f\nsaved model %s'
-        local args = {msg, epoch, mse/nbatches, modelFile}
+        local msg = '\nvalidation\nEpoch %d valid ppl %.4f valid mse %.4f\nsaved model %s'
+        local args = {msg,epoch, exp(nll/nbatches),mse/nbatches, modelFile}
         print(string.format(unpack(args)))
     end
 end
 
 local eval = opt.modelFile and opt.textFile
-
 if not eval then
     train()
 else
