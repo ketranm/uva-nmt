@@ -99,10 +99,21 @@ function utils.find_topk(k, mat)
     return res, row, col
 end
 
-function utils.extractCorrectPredictions(logProbTensor,targetTensor,labelValue)
-	local highestVals,predictions = logProbTensor:topk(1,true)
+function utils.extractCorrectPredictions(logProbTensor,targetTensor,labelValue,correctBeam)
+	local highestVals,predictions = logProbTensor:topk(correctBeam,true)
 	if labelValue == 'binary' then
-		return torch.eq(predictions,targetTensor):cuda()
+		if correctBeam == 1 then 
+			return torch.eq(predictions,targetTensor):cuda()
+		else
+			local inBeam = torch.zeros(targetTensor:size(1),1)
+			for i=1,targetTensor:size(1) do
+				local corr = targetTensor[i]
+				for j=1,correctBeam do
+					if predictions[i][j] == corr then inBeam[i][1] = 1 end
+				end
+			end
+			return inBeam:cuda()
+		end
 	elseif labelValue == 'relativDiff' then
 		local correct = torch.CudaTensor(highestVals:size())
 		for i=1,targetTensor:size(1) do

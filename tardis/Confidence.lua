@@ -17,9 +17,11 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     self.confidence:add(nn.Linear(hidSize,1))
     --self.confidence:add(nn.MulConstant(0.5))
     self.confidence:add(nn.Sigmoid())
+    --self.confidence:add(nn.LogSoftMax())
 
     if confidCriterion == 'MSE' then
         self.confidenceCriterion = nn.MSECriterion()
+        --self.confidenceCriterion = nn.ClassNLLCriterion(torch.ones(2),true)
     elseif confidCriterion == 'mixtureRandomGuessTopK' then
     	self.K = opt.K
     	self.confidenceCriterion = nn.ClassNLLCriterion(false,false)
@@ -79,12 +81,6 @@ function Confidence:updateParameters(opt)
         self.confidenceCriterion_2 = nn.MSECriterion()
     end
     self.confidCriterionType = confidCriterion
-    
-    if opt.labelValue ~=nil then
-    	self.labelValue = opt.labelValue
-    else
-    	self.labelValue = 'binary'
-    end
     self.downweightBAD = false 
     self.gradDownweight = 0.5
     self.good = 0
@@ -100,9 +96,18 @@ function Confidence:updateParameters(opt)
     else 
 	self.labelValue = 'binary'
     end
+    print('LABEL'..self.labelValue)
 end
 
 
+function Confidence:setLabelValue(opt) 
+	if opt.label ~=nil then
+		self.labelValue = opt.labelValue
+    	else 
+		self.labelValue = 'binary'
+    	end
+end
+	
 function Confidence:load(modelFile)
 	self.confidence = torch.load(modelFile)
 end
