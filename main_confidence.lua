@@ -26,15 +26,16 @@ require 'tardis.confidentNMT'
 local model = nn.confidentNMT(opt)
 model:type('torch.CudaTensor')
 if opt.trainingScenario == 'confidenceMechanism' then
-    if opt.confidenceModelToLoad ~=nil then
-	model:load(opt.confidenceModelToLoad)
-    else
     print('t1') 
     local pretrainedModel = nn.NMT(opt)
     pretrainedModel:type('torch.CudaTensor')
     pretrainedModel:load(opt.modelToLoad)
-    print('t2')
     model:loadModelWithoutConfidence(pretrainedModel)
+    print('t2')
+    if opt.confidenceModelToLoad ~=nil then
+	model:loadConfidence(opt.confidenceModelToLoad,opt)
+	model.confidence:updateParameters(opt)
+    else
     print('t3')
     end 
 end
@@ -58,7 +59,7 @@ function train()
         model:evaluate()
         model.confidence:training()
         local nll = 0
- 	local confidMSE = 0
+ 	local confidMSE = {0,0}
 	local aveLoss = 0 
         local nbatches = loader.nbatches
         local totwords = 0
@@ -66,6 +67,7 @@ function train()
         print('learningRate: ', opt.learningRate)
         print('number of batches', nbatches)
         for i = 1, nbatches do
+	    collectgarbage()
             local x, prev_y, next_y = prepro(loader:next())
             model:clearState()
 	    local new_nll,confidLoss = model:optimize({x,prev_y},next_y)
@@ -73,15 +75,16 @@ function train()
 	    --model:backward({x,prev_y},next_y)
  	    --model:update(opt.learningRate)
             nll = nll + new_nll
-	    confidMSE = confidMSE + confidLoss
+	    confidMSE[1] = confidMSE[1] + confidLoss[1]
+	    confidMSE[2] = confidMSE[2] + confidLoss[2]
 	    nupdates = nupdates + 1
 	    totwords = totwords + prev_y:numel() 
             if i % opt.reportEvery == 0 then
 		--model:changeObjectiveWeights()
                 local floatEpoch = (i / nbatches) + epoch - 1
-                local msg = 'epoch %.4f / %d   [ppl] %.4f [confidLoss] %.4f  [speed] %.2f w/s [update] %.3f' --'epoch %.4f / %d   [ppl] %.4f [conf_mse] %.4f [ave_loss] %.4f  [speed] %.2f w/s [update] %.3f'
+                local msg = 'epoch %.4f / %d   [ppl] %.4f [confidLoss] %.4f %.4f [speed] %.2f w/s [update] %.3f' --'epoch %.4f / %d   [ppl] %.4f [conf_mse] %.4f [ave_loss] %.4f  [speed] %.2f w/s [update] %.3f'
                 --local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i),confidMSE/i,aveLoss/i, totwords / timer:time().real, nupdates/1000}
-                local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i), confidMSE/i, totwords / timer:time().real, nupdates/1000}
+                local args = {msg, floatEpoch, opt.maxEpoch, exp(nll/i), confidMSE[1]/i, confidMSE[2]/i, totwords / timer:time().real, nupdates/1000}
                 print(string.format(unpack(args)))
                 collectgarbage()
             end
@@ -99,15 +102,15 @@ function train()
         for i = 1, nbatches do
             model:clearState()
             local x, prev_y, next_y = prepro(loader:next())
-	    local new_nll,confidLoss = forward({x, prev_y}, next_y:view(-1))
-            mse = mse + model:forward({x, prev_y}, next_y:view(-1))
+	    local new_nll,confidLoss = model:forward({x, prev_y}, next_y:view(-1))
+            mse = mse + confidLoss[1] 
             if i % 50 == 0 then collectgarbage() end
         end
 
         
         local modelFile = ''
 	if opt.trainingScenario == 'confidenceMechanism' then
-		modelFile = string.format("%s_confid_ep_%d_%.4f.t7", opt.modelToLoad, epoch, confidMSE/nbatches)
+		modelFile = string.format("%s_confid_ep_%d_%.4f.t7", opt.modelToLoad, epoch, confidMSE[1]/nbatches)
         else
  		string.format("%s/tardis_%d_%.4f.t7", opt.modelDir, epoch, nll/nbatches)
         end
