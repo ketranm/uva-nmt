@@ -15,7 +15,6 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     --self.confidence:add(nn.Tanh())
     --self.confidence:add(nn.Dropout(0.2))
     self.confidence:add(nn.Linear(hidSize,1))
-    --self.confidence:add(nn.MulConstant(0.5))
     self.confidence:add(nn.Sigmoid())
     --self.confidence:add(nn.LogSoftMax())
 
