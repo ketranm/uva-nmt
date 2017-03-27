@@ -4,16 +4,22 @@ local utils = require 'misc.utils'
 local Confidence, parent = torch.class('nn.Confidence', 'nn.Module')
 
 function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
+    local num_hid = opt.num_hid
     self.confidence = nn.Sequential()
     self.confidence:add(nn.Dropout(0.2))
     self.confidence:add(nn.Linear(inputSize,hidSize))
     self.confidence:add(nn.Tanh())
     self.confidence:add(nn.Dropout(0.2))
-    self.confidence:add(nn.Linear(hidSize,hidSize))
-    self.confidence:add(nn.Tanh())
-    --self.confidence:add(nn.Linear(hidSize,hidSize))
-    --self.confidence:add(nn.Tanh())
-    --self.confidence:add(nn.Dropout(0.2))
+    if num_hid == 2 then
+    	self.confidence:add(nn.Linear(hidSize,hidSize))
+    	self.confidence:add(nn.Tanh())
+    elseif num_hid == 3 then
+    	self.confidence:add(nn.Linear(hidSize,hidSize))
+    	self.confidence:add(nn.Tanh())
+	self.confidence:add(nn.Linear(hidSize,hidSize))
+	self.confidence:add(nn.Tanh())
+	self.confidence:add(nn.Dropout(0.2))
+    end
     self.confidence:add(nn.Linear(hidSize,1))
     self.confidence:add(nn.Sigmoid())
     --self.confidence:add(nn.LogSoftMax())
@@ -63,7 +69,7 @@ end
 function Confidence:updateParameters(opt)
      local confidCriterion = opt.confidCriterion	
     if confidCriterion == 'MSE' then
-        self.confidenceCriterion = nn.MSECriterion()
+        self.confidenceCriterion = nn.MSECriterion():cuda()
     elseif confidCriterion == 'mixtureRandomGuessTopK' then
     	self.K = opt.K
     	self.confidenceCriterion = nn.ClassNLLCriterion(false,false):cuda()
@@ -153,6 +159,15 @@ function Confidence:updateCounts()
 	local good = self.correctPredictions:sum()
 	self.good = self.good + good
 	self.total = self.total + total
+end
+
+function Confidence:computeUniformMix(inputState,logProb)
+	local confidScore = self:computeConfidScore(inputState)
+	local unifValue = -1*torch.log(30000)
+        local unifKDistr = torch.CudaTensor(logProb:size()):fill(unifValue)
+        --local unifKDistr = topKUniform(logProb,5)
+        local confidMix = computeMixDistr(confidScore,logProb,unifKDistr)
+	return confidMix
 end
 
 function Confidence:forwardLoss(confidScore,logProb,target)
