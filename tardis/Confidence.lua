@@ -9,11 +9,11 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     self.confidence:add(nn.Linear(inputSize,hidSize))
     self.confidence:add(nn.Tanh())
     self.confidence:add(nn.Dropout(0.2))
-    --self.confidence:add(nn.Linear(hidSize,hidSize))
-    --self.confidence:add(nn.Tanh())
-    --self.confidence:add(nn.Linear(hidSize,hidSize))
-    --self.confidence:add(nn.Tanh())
-    --self.confidence:add(nn.Dropout(0.2))
+    self.confidence:add(nn.Linear(hidSize,hidSize))
+    self.confidence:add(nn.Tanh())
+    self.confidence:add(nn.Linear(hidSize,hidSize))
+    self.confidence:add(nn.Tanh())
+    self.confidence:add(nn.Dropout(0.2))
     self.confidence:add(nn.Linear(hidSize,1))
     self.confidence:add(nn.Sigmoid())
     --self.confidence:add(nn.LogSoftMax())
@@ -63,7 +63,7 @@ end
 function Confidence:updateParameters(opt)
      local confidCriterion = opt.confidCriterion	
     if confidCriterion == 'MSE' then
-        self.confidenceCriterion = nn.MSECriterion()
+        self.confidenceCriterion = nn.MSECriterion():cuda()
     elseif confidCriterion == 'mixtureRandomGuessTopK' then
     	self.K = opt.K
     	self.confidenceCriterion = nn.ClassNLLCriterion(false,false):cuda()
