@@ -3,6 +3,7 @@ require 'nn'
 require 'cunn'
 require 'tardis.EnsemblePrediction'
 require 'data.loadMultiText'
+require 'tardis.topKDistribution'
 local _ = require 'moses'
 local cfg = require 'pl.config'
 local timer = torch.Timer()
@@ -79,7 +80,7 @@ function updateOverlap(k,intersectClass_12,intersectClass_1ens,intersectClass_2e
     end
     overlap_12[k] = overlap_12[k] + numIntersect
 
-    numIntersect = 0
+    local numIntersect = 0
     for i=1,#intersectClass_1ens do
         for j=1,#intersectClass_1ens[i] do
             if intersectClass_1ens[i][j] > 0 then numIntersect = numIntersect + 1 end
@@ -87,7 +88,7 @@ function updateOverlap(k,intersectClass_12,intersectClass_1ens,intersectClass_2e
     end
     overlap_ens1[k] = overlap_ens1[k] + numIntersect
 
-    numIntersect = 0
+    local numIntersect = 0
     for i=1,#intersectClass_2ens do
         for j=1,#intersectClass_2ens[i] do
             if intersectClass_2ens[i][j] > 0 then numIntersect = numIntersect + 1 end
@@ -96,54 +97,77 @@ function updateOverlap(k,intersectClass_12,intersectClass_1ens,intersectClass_2e
     overlap_ens2[k] = overlap_ens2[k] + numIntersect
 end
 
-function updateCrossEntr(k,intersect,topDistr)
+function updateCrossEntr(k,topIndices,distr)
     local result_12 = 0
     local result_21 = 0
 
-    function aggrCrossEntr(intersect_1,intersect_2,distr1,distr2)
-        local result_12 = 0
-        local result_21 = 0
-        local prob1 = torch.exp(distr1)
-        local prob2 = torch.exp(distr2)
-        for i=1,#intersect_1 do
-            for j=1,#intersect_1[i] do
-                local ind1 = intersect_1[i][j]
-                local ind2 = intersect_2[i][j]
-                result_12 = result_12 + distr1[i][ind1]*prob2[i][ind2]
-                result_21 = result_21 + distr2[i][ind2]*prob1[i][ind1]
+    function aggrCrossEntr(ind_1,ind_2,distr1,distr2)
+        local result_12 = {0,0}
+        local result_21 = {0,0}
+        for i=1,ind_1:size(1) do
+            local totalMass1 = torch.exp(totalLogMass(distr1[i]))
+            local totalMass2 = torch.exp(totalLogMass(distr2[i]))
+            local prob1 = torch.exp(distr1[i])
+            local prob2 = torch.exp(distr2[i])
+            local result_12_i = 0
+            local result_21_i = 0
+            for j=1,ind_1:size(2) do
+                local i1 = ind_1[i][j]
+                local i2 = ind_2[i][j]
+                result_12_i = result_12_i + prob1[i1]*distr2[i1]
+                result_21_i = result_21_i + prob2[i2]*distr1[i2]
             end
+            result_12[1] = result_12[1] + result_12_i
+            result_21[1] = result_21[1] + result_21_i
+            
+            result_12[2] = result_12[2] + result_12_i/totalMass1
+            result_21[2] = result_21[2] + result_21_i/totalMass2
         end
-        result_12 = result_12
-        result_21 = result_21
         return {result_12,result_21}
     end
 
+
     -- 1,2
-    local updates_12 = aggrCrossEntr(intersect[1][1],intersect[1][2],topDistr[1],topDistr[2])
-    crossEntr_12[k][1] = crossEntr_12[k][1] - updates_12[1]
-    crossEntr_12[k][2] = crossEntr_12[k][2] - updates_12[2]
-
-    -- 1,ens
-    local updates_1ens = aggrCrossEntr(intersect[2][1],intersect[2][2],topDistr[1],topDistr[3])
-    crossEntr_1ens[k][1] = crossEntr_1ens[k][1] - updates_1ens[1]
-    crossEntr_1ens[k][2] = crossEntr_1ens[k][2] - updates_1ens[2]
-
-    --2,ens
-    local updates_2ens = aggrCrossEntr(intersect[3][1],intersect[3][2],topDistr[2],topDistr[3])
-    crossEntr_2ens[k][1] = crossEntr_2ens[k][1] - updates_2ens[1]
-    crossEntr_2ens[k][2] = crossEntr_2ens[k][2] - updates_2ens[2]
+    local updates_12 = aggrCrossEntr(topIndices[1],topIndices[2],distr[1],distr[2])
+    local updates_1ens = aggrCrossEntr(topIndices[1],topIndices[3],distr[1],distr[3])
+    local updates_2ens = aggrCrossEntr(topIndices[2],topIndices[3],distr[2],topDistr[3])
+    for dir=1,2 do
+        for norm=1,2 do
+            crossEntr_12[k][dir][norm] = crossEntr_12[k][dir][norm] - updates_12[dir][norm]
+            crossEntr_1ens[k][dir][norm] = crossEntr_1ens[k][dir][norm] - updates_1ens[dir][norm]
+            crossEntr_2ens[k][dir][norm] = crossEntr_2ens[k][dir][norm] - updates_2ens[k][dir][norm]
+        end
+    end
 
 end
 
 function updateEntr(k,topDistr)
     function aggrEntr(distr)
-        local prob = torch.exp(distr)
-        local result = torch.sum(torch.cmul(distr,prob)) * (-1)
-        return result
+        local totalLogMass = totalLogMass(distr)
+        local normProb = torch.exp(distr):div(torch.exp(totalLogMass))
+        local normLogProb = torch.sub(distr,totalLogMass)
+        local resultUnnorm = torch.sum(torch.cmul(normLogProb,normProb)) * (-1)
+        local resultNorm = torch.sum(torch.cmul(distr,torch.exp(distr))) * (-1)
+        return resultUnnorm,resultNorm
     end
-    entropy_1[k] = entropy_1[k] + aggrEntr(topDistr[1])
-    entropy_2[k] = entropy_2[k] + aggrEntr(topDistr[2])
-    entropy_ens[k] = entropy_ens[k] + aggrEntr(topDistr[3])
+    local entr1_unn, entr1_norm = aggrEntr(topDistr[1])
+    entropy_1[k][1] = entropy_1[k][1] + entr1_unn
+    entropy_1[k][2] = entropy_1[k][2] + entr1_norm
+
+    local entr2_unn, entr2_norm = aggrEntr(topDistr[2])
+    entropy_2[k][1] = entropy_2[k][1] + entr2_unn
+    entropy_2[k][2] = entropy_2[k][2] + entr2_norm
+    
+    local entrens_unn, entrens_norm = aggrEntr(topDistr[3])
+    entropy_ens[k][1] = entropy_ens[k][1] + entrens_unn
+    entropy_ens[k][2] = entropy_ens[k][2] + entrens_norm
+    
+end
+
+function updateTotalMassPerBeam(k,topDistr)
+    totalMassPerBeam_1[k] = totalMassPerBeam_1[k] + totalLogMass(topDistr[1])
+    totalMassPerBeam_2[k] = totalMassPerBeam_2[k] + totalLogMass(topDistr[2])
+    totalMassPerBeam_ens[k] = totalMassPerBeam_ens[k] + totalLogMass(topDistr[3])
 end
 
 function updateCorrectInTop(k,indices,target)
@@ -174,9 +198,10 @@ function updateAnalysisStructuresK(distributions,k,target,topFunction)
     local intersectClass_1ens = classOverlap(topDistr[1][2],topDistr[3][2])
     local intersectClass_2ens = classOverlap(topDistr[2][2],topDistr[3][2])
     updateOverlap(k,intersectClass_12[1],intersectClass_1ens[1],intersectClass_2ens[1]) -- DONE
-    updateCrossEntr(k,{intersectClass_12,intersectClass_1ens,intersectClass_2ens},_.map(topDistr,function(i,v) return v[1] end)) -- DONE
+    updateCrossEntr(k,_.map(topDistr,function(i,v) return v[2] end),distributions)
     updateEntr(k,_.map(topDistr,function(i,v) return v[1] end)) -- DONE
     updateCorrectInTop(k,_.map(topDistr,function(i,v) return v[2] end),target) --DONE
+    updateTotalMassPerBeam(k,_.map(topDistr,function(i,v) return v[1] end))
     return _.map(topDistr,function(i,v) return v[1] end)
 end
 
@@ -220,6 +245,9 @@ end
 
 
 
+totalMassPerBeam_1 = {}
+totalMassPerBeam_2 = {}
+totalMassPerBeam_ens = {}
 -- class overlap betweek topk distributions
  overlap_12 = {}
 overlap_ens1 = {}
@@ -260,12 +288,15 @@ for _,k in ipairs(K) do
     crossEntr_12[k] = {0,0}
     crossEntr_1ens[k] = {0,0}
     crossEntr_2ens[k] = {0,0}
-    entropy_1[k] = 0
-    entropy_2[k] = 0
-    entropy_ens[k] = 0
+    entropy_1[k] = {0,0}
+    entropy_2[k] = {0,0}
+    entropy_ens[k] = {0,0}
     correctInTopK_1[k] = 0
     correctInTopK_2[k] = 0
     correctInTopK_ens[k] = 0
+    totalMassPerBeam_1[k] = 0
+    totalMassPerBeam_2[k] = 0
+    totalMassPerBeam_ens[k] = 0
 end
 
 --[[
@@ -321,29 +352,52 @@ for _,k in ipairs(K) do
     local denom = totalObservations * k
     print('=======================')
     print('topK:: '..k)
-    local classOverlap_12_k = overlap_12[k]/denom
-    local classOverlap_ens1_k = overlap_ens1[k]/denom
-    local classOverlap_ens2_k = overlap_ens2[k]/denom
-    local crossEntr_12_k = {crossEntr_12[k][1]/denom,crossEntr_12[k][2]/denom}
-    local crossEntr_1ens_k = {crossEntr_1ens[k][1]/denom,crossEntr_1ens[k][2]/denom}
-    local crossEntr_2ens_k = {crossEntr_2ens[k][1]/denom,crossEntr_2ens[k][2]/denom}
-    local entropy_1_k = entropy_1[k]/totalObservations
-    local entropy_2_k = entropy_2[k]/totalObservations
-    local entropy_ens_k = entropy_ens[k]/totalObservations
+    local classOverlap_12_k = overlap_12[k]/totalObservations
+    local classOverlap_ens1_k = overlap_ens1[k]/totalObservations
+    local classOverlap_ens2_k = overlap_ens2[k]/totalObservations
+    local crossEntr_12_k_unn = {crossEntr_12[k][1][1]/denom,crossEntr_12[k][2][1]/denom}
+    local crossEntr_12_k_norm = {crossEntr_12[k][1][2]/totalObservations,crossEntr_12[k][2][2]/totalObservations}
+    local crossEntr_1ens_k_unn = {crossEntr_1ens[k][1][1]/denom,crossEntr_1ens[k][2][1]/denom}
+    local crossEntr_1ens_k_norm = {crossEntr_1ens[k][1][2]/totalObservations,crossEntr_1ens[k][2][2]/totalObservations}
+    local crossEntr_2ens_k_unn = {crossEntr_2ens[k][1][1]/denom,crossEntr_2ens[k][2][1]/denom}
+    local crossEntr_2ens_k_unn = {crossEntr_2ens[k][1][2]/totalObservations,crossEntr_2ens[k][2][2]/totalObservations}
+    local entropy_1_k_unn = entropy_1[k][1]/denom
+    local entropy_1_k_norm = entropy_1[k][2]/totalObservations
+    local entropy_2_k_unn = entropy_2[k][1]/denom
+    local entropy_2_k_norm = entropy_2[k][2]/totalObservations
+    local entropy_ens_k_unn = entropy_ens[k][1]/denom
+    local entropy_ens_k_norm = entropy_ens[k][2]/totalObservations
     local correctInTop_1_k = correctInTopK_1[k]/totalObservations
     local correctInTop_2_k = correctInTopK_2[k]/totalObservations
     local correctInTop_ens_k = correctInTopK_ens[k]/totalObservations
+
+    local logMass_k_1 = totalMassPerBeam_1[k]/totalObservations
+    local logMass_k_2 = totalMassPerBeam_2[k]/totalObservations
+    local logMass_k_ens = totalMassPerBeam_ens[k]/totalObservations
+
+    print('total log.mass per beam 1::'..logMass_k_1)
+    print('total log.mass per beam 2::'..logMass_k_2bv)
+    print('total log.mass per beam ens::'..logMass_k_ens)
+
+    print('unnorm.crossEntr 1 2::'..crossEntr_12_k_unn[1]..' '..crossEntr_12_k_unn[2])
+    print('unnorm.crossEntr 1 ens::'..crossEntr_1ens_k_unn[1]..' '..crossEntr_1ens_k_unn[2])
+    print('unnorm.crossEntr 2 ens::'..crossEntr_2ens_k_unn[1]..' '..crossEntr_2ens_k_unn[2])
+
+    print('normalized crossEntr 1 2::'..crossEntr_12_k_norm[1]..' '..crossEntr_12_k_norm[2])
+    print('normalized crossEntr 1 ens::'..crossEntr_1ens_k_norm[1]..' '..crossEntr_1ens_k_nomr[2])
+    print('normalized crossEntr 2 ens::'..crossEntr_2ens_k_norm[1]..' '..crossEntr_2ens_k_norm[2])
+
+    print('unnorm.entropy 1::'..entropy_1_k_unn)
+    print('unnorm.entropy 2::'..entropy_2_k_unn)
+    print('unnorm.entropy ens::'..entropy_ens_k_unn)
+
+    print('norm.entropy 1::'..entropy_1_k_norm)
+    print('norm.entropy 2::'..entropy_2_k_norm)
+    print('norm.entropy ens::'..entropy_ens_k_norm)
+
     print('class overlap 1 2::'..classOverlap_12_k)
     print('class overlap 1 ens::'..classOverlap_ens1_k)
     print('class overlap 2 ens::'..classOverlap_ens2_k)
-    
-    print('normalized crossEntr 1 2::'..crossEntr_12_k[1]..' '..crossEntr_12_k[2])
-    print('normalized crossEntr 1 ens::'..crossEntr_1ens_k[1]..' '..crossEntr_1ens_k[2])
-    print('normalized crossEntr 2 ens::'..crossEntr_2ens_k[1]..' '..crossEntr_2ens_k[2])
-
-    print('entropy 1::'..entropy_1_k)
-    print('entropy 2::'..entropy_2_k)
-    print('entropy ens::'..entropy_ens_k)
 
     print('normalized number of correct in top 1::'..correctInTop_1_k)
     print('normalized number of correct in top 2::'..correctInTop_2_k)
