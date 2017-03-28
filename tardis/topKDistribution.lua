@@ -17,7 +17,7 @@ function topKUniform(distribution,k)
 	local result = distribution
 	for i=1,ind:size(1) do
 		for j=1,k do
-			result[i][j] = uniformLog[i][1]
+			result[i][ind[i][j]] = uniformLog[i][1]
 		end
 	end
 	return result,uniformLog
