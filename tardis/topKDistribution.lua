@@ -10,6 +10,13 @@ function computeUniformLog(topDistr)
 	return logKUniform
 end
 
+function totalLogMass(topDistr)
+	local max,ind = topDistr:topk(1,true)
+	max = max:expand(topDistr:size())
+	local diff = topDistr - max:expand(topDistr:size())
+	local logsumexp = max[{{},{1}}] + torch.log(torch.sum(torch.exp(diff),2))
+	return logsumexp
+end
 
 function topKUniform(distribution,k)
 	local topDistr,ind = distribution:topk(k,true)
