@@ -73,24 +73,24 @@ end
 function updateOverlap(k,intersectClass_12,intersectClass_1ens,intersectClass_2ens)
     local numIntersect = 0
     for i=1,#intersectClass_12 do
-        for j=1,intersectClass_12[i] do
-            if intersectClass_12[i] > 0 then numIntersect = numIntersect + 1 end
+        for j=1,#intersectClass_12[i] do
+            if intersectClass_12[i][j] > 0 then numIntersect = numIntersect + 1 end
         end
     end
     overlap_12[k] = overlap_12[k] + numIntersect
 
     numIntersect = 0
-    or i=1,#intersectClass_1ens do
-        for j=1,intersectClass_1ens[i] do
-            if intersectClass_1ens[i] > 0 then numIntersect = numIntersect + 1 end
+    for i=1,#intersectClass_1ens do
+        for j=1,#intersectClass_1ens[i] do
+            if intersectClass_1ens[i][j] > 0 then numIntersect = numIntersect + 1 end
         end
     end
     overlap_ens1[k] = overlap_ens1[k] + numIntersect
 
     numIntersect = 0
-    or i=1,#intersectClass_2ens do
-        for j=1,intersectClass_2ens[i] do
-            if intersectClass_2ens[i] > 0 then numIntersect = numIntersect + 1 end
+    for i=1,#intersectClass_2ens do
+        for j=1,#intersectClass_2ens[i] do
+            if intersectClass_2ens[i][j] > 0 then numIntersect = numIntersect + 1 end
         end
     end
     overlap_ens2[k] = overlap_ens2[k] + numIntersect
@@ -129,7 +129,7 @@ function updateCrossEntr(k,intersect,topDistr)
     crossEntr_1ens[k][2] = crossEntr_1ens[k][2] - updates_1ens[2]
 
     --2,ens
-    local updates_1ens = aggrCrossEntr(intersect[3][1],intersect[3][2],topDistr[2],topDistr[3])
+    local updates_2ens = aggrCrossEntr(intersect[3][1],intersect[3][2],topDistr[2],topDistr[3])
     crossEntr_2ens[k][1] = crossEntr_2ens[k][1] - updates_2ens[1]
     crossEntr_2ens[k][2] = crossEntr_2ens[k][2] - updates_2ens[2]
 
@@ -138,7 +138,7 @@ end
 function updateEntr(k,topDistr)
     function aggrEntr(distr)
         local prob = torch.exp(distr)
-        local result = torch.mul(torch.sum(torch.cmul(distr,prob)),-1)
+        local result = torch.sum(torch.cmul(distr,prob)) * (-1)
         return result
     end
     entropy_1[k] = entropy_1[k] + aggrEntr(topDistr[1])
@@ -152,7 +152,7 @@ function updateCorrectInTop(k,indices,target)
         local timesCorrect = 0
         for i=1,ind:size(1) do
             local targetClass = target[i]
-            for j=1,#ind:size(2) do
+            for j=1,ind:size(2) do
                 if ind[i][j] == targetClass then
                     timesCorrect = timesCorrect + 1
                     break
@@ -166,7 +166,7 @@ function updateCorrectInTop(k,indices,target)
     correctInTopK_ens[k] = correctInTopK_ens[k] + findCorrect(indices[3])
 end
 
-function updateAnalysisStructuresK(distributions,k,target)
+function updateAnalysisStructuresK(distributions,k,target,topFunction)
     local d1,d2,ens = unpack(distributions)
     local topDistr = _.map(distributions,function(i,v) return topFunction(v,k) end)
 
@@ -174,10 +174,15 @@ function updateAnalysisStructuresK(distributions,k,target)
     local intersectClass_1ens = classOverlap(topDistr[1][2],topDistr[3][2])
     local intersectClass_2ens = classOverlap(topDistr[2][2],topDistr[3][2])
     updateOverlap(k,intersectClass_12[1],intersectClass_1ens[1],intersectClass_2ens[1]) -- DONE
-    updateCrossEntr(k,{intersectClass_12,intersectClass_1ens,intersectClass_2ens},topDistr) -- DONE
-    updateEntr(k,topDistr) -- DONE
+    updateCrossEntr(k,{intersectClass_12,intersectClass_1ens,intersectClass_2ens},_.map(topDistr,function(i,v) return v[1] end)) -- DONE
+    updateEntr(k,_.map(topDistr,function(i,v) return v[1] end)) -- DONE
     updateCorrectInTop(k,_.map(topDistr,function(i,v) return v[2] end),target) --DONE
-    return topDistr
+    return _.map(topDistr,function(i,v) return v[1] end)
+end
+
+function topKdistr(distr,k)
+	local vals,ind = distr:topk(k,true)
+	return {vals,ind}
 end
 
 function updateCorrectRank(distributions,target)
@@ -197,7 +202,6 @@ function updateCorrectRank(distributions,target)
         return rankAggr
     end
 
-    correctRank_1 getCorrectRank
 
 end
 function updateKindependentStructures(distributions,target)
@@ -217,29 +221,29 @@ end
 
 
 -- class overlap betweek topk distributions
-local overlap_12 = {}
-local overlap_ens1 = {}
-local overlap_ens2 = {}
+ overlap_12 = {}
+overlap_ens1 = {}
+overlap_ens2 = {}
 --(cormalized by k) crossentropy between distributions (tuple {ab,ba})
-local crossEntr_12 = {}
-local crossEntr_1ens = {}
-local crossEntr_2ens = {}
+crossEntr_12 = {}
+crossEntr_1ens = {}
+crossEntr_2ens = {}
 -- (normalized by k) entropy of topk distribution 
-local entropy_1 = {}
-local entropy_2 = {}
-local entropy_ens = {}
+entropy_1 = {}
+entropy_2 = {}
+entropy_ens = {}
 -- whether correct class is in topk distribution
-local correctInTopK_1 = {}
-local correctInTopK_2 = {}
-local correctInTopK_ens = {}
+correctInTopK_1 = {}
+correctInTopK_2 = {}
+correctInTopK_ens = {}
 --rank of correct class (independent of topK) (dataset -- will be used for correlation)
-local correctRank_1 = {}
-local correctRank_2 = {}
-local correctRank_ens = {}
+correctRank_1 = {}
+correctRank_2 = {}
+correctRank_ens = {}
 --loss (p_max - p_corr)/p_max  (independent of topK)
-local maxVScorrLoss_1 = {}
-local maxVScorrLoss_2 = {}
-local maxVScorrLoss_ens = {}
+maxVScorrLoss_1 = {}
+maxVScorrLoss_2 = {}
+maxVScorrLoss_ens = {}
 
 
 
@@ -259,9 +263,9 @@ for _,k in ipairs(K) do
     entropy_1[k] = 0
     entropy_2[k] = 0
     entropy_ens[k] = 0
-    correctInTopK_1[k] = {0,0}
-    correctInTopK_2[k] = {0,0}
-    correctInTopK_ens[k] = {0,0}
+    correctInTopK_1[k] = 0
+    correctInTopK_2[k] = 0
+    correctInTopK_ens[k] = 0
 end
 
 --[[
@@ -300,7 +304,7 @@ for i=1,nbatches do
 
     local curr_distribs = {distr_1,distr_2,distr_ens}
     for i=#K,1,-1 do
-        local newDistr = updateAnalysisStructuresK(curr_distribs,K[i],next_y) -- TODO: add topK function (for thresholds), for now just topK
+        local newDistr = updateAnalysisStructuresK(curr_distribs,K[i],next_y,topKdistr) -- TODO: add topK function (for thresholds), for now just topK
         curr_distribs = newDistr
     end
     totalObservations = totalObservations + next_y:size(1)*next_y:size(2)
@@ -333,16 +337,16 @@ for _,k in ipairs(K) do
     print('class overlap 1 ens::'..classOverlap_ens1_k)
     print('class overlap 2 ens::'..classOverlap_ens2_k)
     
-    print('normalized crossEntr 1 2'..crossEntr_12_k[1]..' '..crossEntr_12_k[2])
-    print('normalized crossEntr 1 ens'..crossEntr_1ens_k[1]..' '..crossEntr_1ens_k[2])
-    print('normalized crossEntr 2 ens'..crossEntr_2ens_k[1]..' '..crossEntr_2ens_k[2])
+    print('normalized crossEntr 1 2::'..crossEntr_12_k[1]..' '..crossEntr_12_k[2])
+    print('normalized crossEntr 1 ens::'..crossEntr_1ens_k[1]..' '..crossEntr_1ens_k[2])
+    print('normalized crossEntr 2 ens::'..crossEntr_2ens_k[1]..' '..crossEntr_2ens_k[2])
 
-    print('entropy 1'..entropy_1_k)
-    print('entropy 2'..entropy_2_k)
-    print('entropy ens'..entropy_ens_k)
+    print('entropy 1::'..entropy_1_k)
+    print('entropy 2::'..entropy_2_k)
+    print('entropy ens::'..entropy_ens_k)
 
-    print('normalized number of correct in top 1'..correctInTop_1_k)
-    print('normalized number of correct in top 2'..correctInTop_2_k)
-    print('normalized number of correct in top ens'..correctInTop_ens_k)
+    print('normalized number of correct in top 1::'..correctInTop_1_k)
+    print('normalized number of correct in top 2::'..correctInTop_2_k)
+    print('normalized number of correct in top ens::'..correctInTop_ens_k)
 end
 
