@@ -12,7 +12,6 @@ local NMT, parent = torch.class('nn.NMT', 'nn.Module')
 
 function NMT:__init(opt)
     -- build encoder
-    print(opt)
     local sourceSize = opt.sourceSize
     local inputSize = opt.inputSize
     local hiddenSize = opt.hiddenSize
