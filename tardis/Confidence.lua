@@ -5,6 +5,7 @@ local Confidence, parent = torch.class('nn.Confidence', 'nn.Module')
 
 function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     self.confidence = nn.Sequential()
+    
     self.confidence:add(nn.Linear(inputSize,hidSize))
     self.confidence:add(nn.Dropout(0.2))
     self.confidence:add(nn.Tanh())
