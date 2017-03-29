@@ -33,7 +33,7 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
 		vocab = torch.load(model_kwargs.dataPath..'/vocab.t7')
 	end
         local m = nil
-        if self.combinMethod == 'confidPrediction' then
+        if self.combinMethod == 'confidPrediction' or self.combinMethod == 'confidInterpolation' then
 	    m1 = nn.NMT(model_kwargs)
 	    m1:type('torch.CudaTensor')
 	    m1:load(model_kwargs.modelToLoad)    
@@ -92,6 +92,9 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
                     self.embeddingSize,kwargs.combinWithBackprop)
     elseif self.combinMethod == 'confidPrediction' then
         self.combinMachine = confidenceMixture(kwargs.confidenceScoreCombination)
+    elseif self.combinMethod == 'confidInterpolation' then
+        self.combinMachine = confidenceInterpolation(opt.direction)
+        self.direction == opt.direction
     end
     
     return self
@@ -288,6 +291,10 @@ function EnsemblePrediction:decodeAndCombinePredictions(curIdx,timeStep)
         _.each(self.models, function(i,m) m:stepDecoderUpToHidden(curIdx) end)
         logProbs = _.map(self.models, function(i,m) return m:predictTargetLabel() end)
         combinWeights = _.map(self.models,function(i,m) return m:predictConfidenceScore() end)
+    elseif self.combinMachine == 'confidInterpolation' then
+        _.each(self.models, function(i,m) m:stepDecoderUpToHidden(curIdx) end)
+        logProbs = _.map(self.models, function(i,m) return m:predictTargetLabel() end)
+        combinWeights = {self.models[self.direction]:predictConfidenceScore()}
     else
         logProbs = _.map(self.models, function(i,m) return m:stepDecoder(curIdx) end) 
     end

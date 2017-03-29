@@ -133,6 +133,29 @@ function entropyConfidenceBinary()
 	return comb
 end
 
+function confidenceInterpolation(direction)
+	local direction = direction
+	function comb(tableOutputs,confidScore)
+		local logCombinWeights = torch.log(confidScores)
+		local logCombinWeightsComplement = torch.log(1 - confidScores)
+		local weightedExpert = nil
+		local weightedSecondExpert = nil
+		if direction == 1  then
+			weightedExpert = torch.add(tableOutputs[1],logCombinWeights)
+			weightedSecondExpert = torch.add(tableOutputs[2],logCombinWeightsComplement)
+		elseif direction == 2 then
+			weightedExpert = torch.add(tableOutputs[1],logCombinWeightsComplement)
+			weightedSecondExpert = torch.add(tableOutputs[2],logCombinWeights)
+		end
+		local secondAdd  = torch.exp(weigtedExpert-weigtedSecondExpert)
+		local oneTensor = torch.CudaTensor(secondAdd:size()):fill(1.0)
+		secondAdd = torch.log(secondAdd+oneTensor)
+		return weigtedExpert + secondAdd
+	end
+	return comb
+end
+
+
 
 function confidenceMixture(confidenceScoreCombination)
 	--local combination = 'arithmAve' 
@@ -142,11 +165,11 @@ function confidenceMixture(confidenceScoreCombination)
 		if combination == 'arithmAve' then
 			local norm = _.reduce(confidScores,function(memo,v) return memo+v end)
 			norm = torch.log(norm)
-			local logNormWeights = _.map(confidScores,function(i,v) return torch.log(v)-norm end)
+			local logNormWeights = _.map(confidScores[1],function(i,v) return torch.log(v)-norm end)
 			return logNormWeights
 		elseif combination == 'softmax' then
 			local norm = logSumExp2(torch.cat(confidScores))
-			local logNormWeights = _.map(confidScores,function(i,v) return v - norm end)
+			local logNormWeights = _.map(confidScores[1],function(i,v) return v - norm end)
 			return logNormWeights
 		end
 	end	
