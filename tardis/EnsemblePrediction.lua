@@ -37,10 +37,10 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
 	    m1 = nn.NMT(model_kwargs)
 	    m1:type('torch.CudaTensor')
 	    m1:load(model_kwargs.modelToLoad)    
-            m = nn.confidentNMT(model_kwargs)
+            m = nn.confidentNMT(model_kwargs,kwargs.num_hid)
             m:type('torch.CudaTensor')
             m:loadModelWithoutConfidence(m1)
-            m:loadConfidence(model_kwargs.confidenceModelToLoad)
+            m:loadConfidence(model_kwargs.confidenceModelToLoad,kwargs)
             m.confidence:evaluate()
 	    collectgarbage()
         else
@@ -189,7 +189,7 @@ function EnsemblePrediction:forwardAndOutputDistributions(xs,prev_y)
     end
     local ensLogprob = self.combinMachine(logProbs)
     table.insert(logProbs,ensLogprob)
-    return logProbs
+    return unpack(logProbs)
 end
 
 function EnsemblePrediction:translate(xs)
