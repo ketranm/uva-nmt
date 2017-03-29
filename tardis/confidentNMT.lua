@@ -31,7 +31,8 @@ function NMT:__init(opt)
     self.hidLayer:add(nn.View(-1, 2 * hiddenSize))
     self.hidLayer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
     self.hidLayer:add(nn.Tanh())
-	
+
+
     self.confidence= nn.Confidence(hiddenSize,confidenceHidSize,opt.confidCriterion,opt)
     self.confidWeight = opt.confidWeight
     
@@ -50,15 +51,15 @@ function NMT:__init(opt)
     self.optimConfig = {learningRate = 0.001, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0.0001}
     self.optimStates = {}
 
-
-
 end
 function NMT:correctStatistics()
 	return self.confidence:correctStatistics()
 end
 
-function NMT:loadConfidence(modelFile)
-    self.confidence = torch.load(modelFile)
+function NMT:loadConfidence(modelFile,opt)
+    local conf = nn.Confidence(1000,500,'MSE',opt)
+	conf = torch.load(modelFile)
+     self.confidence = conf:cuda() 
 end
 
 function NMT:loadModelWithoutConfidence(model)
@@ -100,6 +101,8 @@ function NMT:forward(input, target)
     self:stepDecoderUpToHidden(input[2])
     self:predictTargetLabel()
     local mainLoss = self.criterion:forward(self.logProb,target)
+    --change
+    --local confidLoss = self.confidence:forward(self.hidLayerOutput,self.logProb,target)
     local confidLoss = self.confidence:forward(self.hidLayerOutput,self.logProb,target)
     self.confidLoss = confidLoss
     return mainLoss,self.confidLoss 
@@ -109,11 +112,14 @@ function NMT:predictConfidenceScore()
     return self.confidence:computeConfidScore(self.hidLayerOutput)
 end
 
+
+
 function NMT:backward(input, target,mode)
     -- zero grad manually here
     self.gradParams:zero()
     local hidLayerGradOutput = torch.CudaTensor() 
     if self.trainingScenario == 'confidenceMechanism' or (self.trainingScenario == 'alternating' and mode == 'confidence') then
+	--change
         hidLayerGradOutput = self.confidence:backward(self.hidLayerOutput,target,self.logProb)
     elseif self.trainingScenario == 'alternating' and mode == 'NMT' then
         local gradXent = self.criterion:backward(self.logProb, target:view(-1))
@@ -154,7 +160,16 @@ function NMT:stepDecoderUpToHidden(x)
     self.prevStates = self.decoder:lastStates()
 end
 
-
+function NMT:stepDecoder(x)
+	self.decoder:setStates(self.prevStates)
+	self.decOutput = self.decoder:forward(x)
+	self.cntx = self.glimpse:forward{self.encOutput, self.decOutput}
+	self.hidLayerOutput = self.hidLayer:forward{self.cntx, self.decOutput}
+	self.prevStates = self.decoder:lastStates()
+	local logProb = self:predictTargetLabel()	
+	local uniformMix = self.confidence:computeUniformMix(self.hidLayerOutput,logProb)
+	return uniformMix
+end
 function NMT:extractConfidenceScores()
     return self.confidence.confidScore
 end
@@ -165,10 +180,6 @@ function NMT:predictTargetLabel()
     return self.logProb
 end
 
-function NMT:stepDecoder(x)
-	self:stepDecoderUpToHidden(x)
-	return self:predictTargetLabel()
-end
 
 
 function NMT:clearState()
