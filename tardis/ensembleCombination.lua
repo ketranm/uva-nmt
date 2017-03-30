@@ -135,26 +135,63 @@ end
 
 function confidenceInterpolation(direction)
 	local direction = direction
-	function comb(tableOutputs,confidScore)
-		local logCombinWeights = torch.log(confidScores)
-		local logCombinWeightsComplement = torch.log(1 - confidScores)
+	function comb(tableOutputs,confidScores)
+		--print(confidScores[1][1])
+		local logCombinWeights = torch.log(confidScores[1])--:expandAs(tableOutputs[1])
+		local logCombinWeightsComplement = torch.log(1 - confidScores[1])--:expandAs(tableOutputs[1])
 		local weightedExpert = nil
 		local weightedSecondExpert = nil
 		if direction == 1  then
-			weightedExpert = torch.add(tableOutputs[1],logCombinWeights)
-			weightedSecondExpert = torch.add(tableOutputs[2],logCombinWeightsComplement)
+			weightedExpert = torch.add(tableOutputs[1],logCombinWeights:expandAs(tableOutputs[1]))
+			weightedSecondExpert = torch.add(tableOutputs[2],logCombinWeightsComplement:expandAs(tableOutputs[1]))
 		elseif direction == 2 then
-			weightedExpert = torch.add(tableOutputs[1],logCombinWeightsComplement)
-			weightedSecondExpert = torch.add(tableOutputs[2],logCombinWeights)
+			weightedExpert = torch.add(tableOutputs[1],logCombinWeightsComplement:expandAs(tableOutputs[1]))
+			weightedSecondExpert = torch.add(tableOutputs[2],logCombinWeights:expandAs(tableOutputs[1]))
 		end
-		local secondAdd  = torch.exp(weigtedExpert-weigtedSecondExpert)
+		local secondAdd  = torch.exp(weightedSecondExpert-weightedExpert)
 		local oneTensor = torch.CudaTensor(secondAdd:size()):fill(1.0)
 		secondAdd = torch.log(secondAdd+oneTensor)
-		return weigtedExpert + secondAdd
+		return weightedExpert + secondAdd
 	end
 	return comb
 end
 
+function logSumExpTable2(t)
+	local secondAdd = torch.exp(t[2]-t[1])
+	local oneTensor = torch.CudaTensor(secondAdd:size()):fill(1.0)
+	secondAdd = torch.log(secondAdd+oneTensor)
+	return t[1] + secondAdd
+end
+function confidenceMutualInterp(direction)
+	local sys1 = direction 
+	local sys2 = 2
+	if direction == 2 then
+		sys2 = 1
+	end
+	local k = 100	
+	function comb(tableOutputs,confidScores)
+		--print(confidScores[1][1])
+		local logCombinWeights = torch.log(confidScores[1])--:expandAs(tableOutputs[1])
+		local logCombinWeightsComplement = torch.log(1 - confidScores[1])--:expandAs(tableOutputs[1])
+		
+		local wExp1 = torch.add(tableOutputs[sys1],torch.log(confidScores[sys1]):expandAs(tableOutputs[sys1]))	
+		local w2 = torch.cmul(confidScores[sys2],1-confidScores[sys1])
+		local wExp2 = torch.add(tableOutputs[sys2],torch.log(w2):expandAs(tableOutputs[sys2]))
+		local weightedExperts = logSumExpTable2({wExp1,wExp2})
+		local wUnif = 1 - confidScores[sys1] - confidScores[sys2] - torch.cmul(confidScores[sys1],confidScores[sys2])
+		local unifExp = 1/k * wUnif
+		local unifEnsDistr = logSumExpTable2({torch.add(tableOutputs[1],torch.log(0.5)),torch.add(tableOutputs[2],torch.log(0.5))})		
+		--local _,ind = weightedExperts:topk(k,true)
+		local _,ind =unifEnsDistr:topk(k,true)
+		for i=1,ind:size(1) do
+			for j=1,k do
+				weightedExperts[i][ind[i][j]] = torch.log(torch.exp(weightedExperts[i][ind[i][j]])+unifExp[i][1])
+			end		
+		end
+		return weightedExperts 	
+	end
+	return comb
+end
 
 
 function confidenceMixture(confidenceScoreCombination)
