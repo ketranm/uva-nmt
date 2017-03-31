@@ -19,6 +19,17 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
 	self.confidence:add(nn.Linear(hidSize,hidSize))
 	self.confidence:add(nn.Tanh())
 	self.confidence:add(nn.Dropout(0.2))
+    elseif num_hid == 5 then
+    	self.confidence:add(nn.Linear(hidSize,hidSize))
+    	self.confidence:add(nn.Tanh())
+	self.confidence:add(nn.Linear(hidSize,hidSize))
+	self.confidence:add(nn.Tanh())
+	self.confidence:add(nn.Dropout(0.2))
+    	self.confidence:add(nn.Linear(hidSize,hidSize))
+    	self.confidence:add(nn.Tanh())
+	self.confidence:add(nn.Linear(hidSize,hidSize))
+	self.confidence:add(nn.Tanh())
+	self.confidence:add(nn.Dropout(0.2))
     end
     self.confidence:add(nn.Linear(hidSize,1))
     self.confidence:add(nn.Sigmoid())
@@ -169,7 +180,8 @@ function Confidence:computeUniformMix(inputState,logProb)
 	local unifValue = -1*torch.log(30000)
         local unifKDistr = torch.CudaTensor(logProb:size()):fill(unifValue)
         --local unifKDistr = topKUniform(logProb,5)
-        local confidMix = computeMixDistr(confidScore,logProb,unifKDistr)
+        --local unifKDistr = topKUniform_2(logProb,100)
+        local confidMix = computeMixDistr_2(confidScore,logProb,100)
 	return confidMix
 end
 
@@ -211,11 +223,27 @@ function Confidence:forwardLoss(confidScore,logProb,target)
 end
 
 
+function computeMixDistr_2(weight,logProb1,k)
+    local logWeight = torch.log(weight):expandAs(logProb1)
+    local secondWeight = 1 - weight
+    local unifValue = 1/k 
+    local _,ind=logProb1:topk(k,true)
+    local result = torch.add(logProb1,logWeight) 
+    for i=1,ind:size(1) do
+	local w = secondWeight[i][1]
+	local unifAdd = unifValue*w 
+	for j=1,k do
+		result[i][ind[i][j]]= torch.log(torch.exp(result[i][ind[i][j]]) + unifAdd) 
+	end	
+    end
+    return result
+end
+
 function computeMixDistr(weight,logProb1,logProb2)
     local logWeight = torch.log(weight):expandAs(logProb1) -- tensor
     local logSecondWeight = torch.log(1 - weight)
     local firstAdd = logProb1 + logWeight
-    local diff = logSecondWeight:expand(logProb2:size()) + logProb2 - firstAdd
+    local diff = torch.add(logSecondWeight:expand(logProb2:size()),logProb2:cuda()) - firstAdd
     local result = firstAdd + torch.log(torch.exp(diff) + 1)
     return result
 end

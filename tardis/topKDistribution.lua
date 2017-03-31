@@ -29,3 +29,16 @@ function topKUniform(distribution,k)
 	end
 	return result,uniformLog
 end
+
+
+function topKUniform_2(distribution,k)
+	local topDistr,ind = distribution:topk(k,true)
+	local logValue = (-1)*torch.log(k)
+	local result = torch.Tensor(distribution:size())
+	for i=1,ind:size(1) do
+		for j=1,k do
+			result[i][ind[i][j]] = logValue 
+		end
+	end
+	return result
+end
