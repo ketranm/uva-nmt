@@ -5,6 +5,7 @@ local Confidence, parent = torch.class('nn.ConfidenceMultiClass', 'nn.Confidence
 
 function Confidence:__init(inputSize,hidSize,confidCriterion,classes,opt)
     local num_hid = opt.num_hid
+    self.classes = classes
     self.classesCounts  =  {}  -- table of the form {1,20,100} means top-1,top-20 without 1, top-100 without top-20,rest (outside of top 100)
     for i,_ in ipairs(classes) do self.classesCounts[i] = 0 end
 
@@ -81,7 +82,7 @@ end
 
 function Confidence:forwardLoss(confidScore,logProb,target)
     if self.confidCriterionType == 'NLL' then 
-        local beamClasses = utils.extractBeamRegionOfCorrect(logProb,target)
+        local beamClasses = utils.extractBeamRegionOfCorrect(logProb,target,self.classes)
         self.confidLoss = {self.confidenceCriterion:forward(confidScore,beamClasses),0}
         self.beamClasses = correctPredictions:cuda()
 		self:updateCounts()
