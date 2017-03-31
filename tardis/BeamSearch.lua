@@ -113,7 +113,6 @@ function BeamSearch:run(x, maxLength)
     local alpha = self.normLength
     for t = 1, T-1 do
         local curIdx = hypos[{{}, {t}}]
-	print(curIdx)
         local logProb = self.model:stepDecoder(curIdx)
         -- quick hack to handle the first prediction
         if t == 1 then

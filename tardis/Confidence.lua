@@ -178,7 +178,7 @@ function Confidence:computeUniformMix(inputState,logProb)
         --local unifKDistr = torch.CudaTensor(logProb:size()):fill(unifValue)
         --local unifKDistr = topKUniform(logProb,5)
         --local unifKDistr = topKUniform_2(logProb,100)
-        local confidMix = computeMixDistr_2(confidScore,logProb,100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--100)--unifKDistr)
+        local confidMix = computeMixDistr_2(confidScore,logProb,100)
 	return confidMix
 end
 
