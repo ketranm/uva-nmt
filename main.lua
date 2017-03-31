@@ -10,7 +10,6 @@ require 'tardis.BeamSearch'
 
 
 local timer = torch.Timer()
-torch.manualSeed(42)
 local cfg = require 'pl.config'
 local opt = cfg.read(arg[1])
 print('BLA')
@@ -39,7 +38,7 @@ function prepro(input)
     -- make contiguous and transfer to gpu
     x = x:contiguous():cudaLong()
     prev_y = y:narrow(2, 1, seqlen-1):contiguous():cudaLong()
-    next_y = y:narrow(2, 2, seqlen-1):contiguous():cudaLong()
+    next_y = y:narrow(2, 2, seqlen-1):contiguous():cudaLong()  --batchsize x seqlen
 
     return x, prev_y, next_y
 end

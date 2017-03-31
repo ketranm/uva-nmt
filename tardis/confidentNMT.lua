@@ -32,9 +32,13 @@ function NMT:__init(opt)
     self.hidLayer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
     self.hidLayer:add(nn.Tanh())
 
-
-    self.confidence= nn.Confidence(hiddenSize,confidenceHidSize,opt.confidCriterion,opt)
-    self.confidWeight = opt.confidWeight
+    if opt.confidenceOneClass == 1 then
+        self.confidence = nn.Confidence(hiddenSize,confidenceHidSize,opt.confidCriterion,opt)
+    elseif opt.confidenceMultiClass == 1 then
+        for c in opt.confidClasses:gmatch("%S+") do
+        self.confidence = nn.ConfidenceMultiClass(hiddenSize,confidenceHidSize,opt.confidCriterion,opt)
+    end
+        self.confidWeight = opt.confidWeight
     
     self.outputLayer = nn.Sequential()
     self.outputLayer:add(nn.Linear(hiddenSize, targetSize, true))

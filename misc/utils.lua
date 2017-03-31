@@ -124,6 +124,30 @@ function utils.extractCorrectPredictions(logProbTensor,targetTensor,labelValue,c
 	end	
 end	
 
+function utils.extractbeamRegionOfCorrect(logProbTensor,targetTensor,classes)
+    local topDistr,ind = logProbTensor:topk(classes[#classes],true)
+    local foundIndex = torch.Tensor(logProbTensor:size(1)):fill(4)
+    local classes = classes
+    
+    function getClass(index)
+        for _,cl in ipairs(classes) do
+            if index == cl or index < cl then return cl end
+        end
+    end
+
+    for i=1,ind:size(1) do
+        local t = targetTensor[i]
+        for j=1,ind:size(2) do
+            if ind[i][j] == t then
+                foundIndex[i] = getClass(j)
+                break
+            end
+        end
+    end
+    return foundIndex
+end 
+
+
 function utils.reverse(t, dim)
     --[[ Reverse tensor along the specified dimension
 

@@ -1,51 +1,28 @@
 require 'tardis.PairwiseLoss'
 require 'tardis.topKDistribution'
 local utils = require 'misc.utils'
-local Confidence, parent = torch.class('nn.Confidence', 'nn.Module')
+local Confidence, parent = torch.class('nn.Confidence_new', 'nn.Module')
 
 function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
-    local num_hid = opt.num_hid
     self.confidence = nn.Sequential()
+    self.confidence:add(nn.JoinTable(3))
+    self.confidence:add(nn.View(-1,2*inputSize))
+    self.confidence:add(nn.Linear(2*inputSize,hidSize))
     self.confidence:add(nn.Dropout(0.2))
-    self.confidence:add(nn.Linear(inputSize,hidSize))
     self.confidence:add(nn.Tanh())
     self.confidence:add(nn.Dropout(0.2))
-    if num_hid == 2 then
-    	self.confidence:add(nn.Linear(hidSize,hidSize))
-    	self.confidence:add(nn.Tanh())
-    elseif num_hid == 3 then
-    	self.confidence:add(nn.Linear(hidSize,hidSize))
-    	self.confidence:add(nn.Tanh())
-	self.confidence:add(nn.Linear(hidSize,hidSize))
-	self.confidence:add(nn.Tanh())
-	self.confidence:add(nn.Dropout(0.2))
-    elseif num_hid == 5 then
-    	self.confidence:add(nn.Linear(hidSize,hidSize))
-    	self.confidence:add(nn.Tanh())
-	self.confidence:add(nn.Linear(hidSize,hidSize))
-	self.confidence:add(nn.Tanh())
-	self.confidence:add(nn.Dropout(0.2))
-    	self.confidence:add(nn.Linear(hidSize,hidSize))
-    	self.confidence:add(nn.Tanh())
-	self.confidence:add(nn.Linear(hidSize,hidSize))
-	self.confidence:add(nn.Tanh())
-	self.confidence:add(nn.Dropout(0.2))
-    end
     self.confidence:add(nn.Linear(hidSize,1))
+    --self.confidence:add(nn.MulConstant(0.5))
     self.confidence:add(nn.Sigmoid())
-    --self.confidence:add(nn.LogSoftMax())
 
     if confidCriterion == 'MSE' then
         self.confidenceCriterion = nn.MSECriterion()
-        --self.confidenceCriterion = nn.ClassNLLCriterion(torch.ones(2),true)
     elseif confidCriterion == 'mixtureRandomGuessTopK' then
     	self.K = opt.K
     	self.confidenceCriterion = nn.ClassNLLCriterion(false,false)
-    	self.matchingCriterion = nn.MSECriterion()
     	if opt.matchingObjective == 1 then
     		self.matchingObjective = 1
-	else
-		self.matchingObjective = 0
+    		self.matchingObjective = nn.MSECriterion()
     	end
     elseif confidCriterion == 'mixtureCrossEnt' then
         self.confidenceCriterion = nn.ClassNLLCriterion()
@@ -77,53 +54,6 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
     end
 end
 
-function Confidence:updateParameters(opt)
-     local confidCriterion = opt.confidCriterion	
-    if confidCriterion == 'MSE' then
-        self.confidenceCriterion = nn.MSECriterion():cuda()
-    elseif confidCriterion == 'mixtureRandomGuessTopK' then
-    	self.K = opt.K
-    	self.confidenceCriterion = nn.ClassNLLCriterion(false,false):cuda()
-    	self.matchingCriterion = nn.MSECriterion():cuda()
-    	if opt.matchingObjective == 1 then
-    		self.matchingObjective = 1
-	else
-		self.matchingObjective = 0
-    	end
-    elseif confidCriterion == 'mixtureCrossEnt' then
-        self.confidenceCriterion = nn.ClassNLLCriterion()
-    elseif confidCriterion == 'pairwise' then
-	self.confidenceCriterion_1 = nn.PairwiseLoss(opt)
-        self.confidenceCriterion_2 = nn.MSECriterion()
-    end
-    self.confidCriterionType = confidCriterion
-    self.downweightBAD = false 
-    self.gradDownweight = 0.5
-    self.good = 0
-    self.total = 0
-    self.downweightOK = false 
-    if opt.downweightOK == 1 then
-	self.downweightOK = true 
-     	self.gradDownweight = opt.gradDownweight 
-    end
-    self.correctBeam = opt.correctBeam
-    if opt.labelValue ~=nil  then		
-	self.labelValue = opt.labelValue
-    else 
-	self.labelValue = 'binary'
-    end
-    print('LABEL'..self.labelValue)
-end
-
-
-function Confidence:setLabelValue(opt) 
-	if opt.label ~=nil then
-		self.labelValue = opt.labelValue
-    	else 
-		self.labelValue = 'binary'
-    	end
-end
-	
 function Confidence:load(modelFile)
 	self.confidence = torch.load(modelFile)
 end
@@ -172,40 +102,27 @@ function Confidence:updateCounts()
 	self.total = self.total + total
 end
 
-function Confidence:computeUniformMix(inputState,logProb)
-	local confidScore = self:computeConfidScore(inputState)
-	--new:
-	local primaryDistr = self.Tensor(logProb:size())
-	--
-	local unifValue = -1*torch.log(30000)
-        local unifKDistr = torch.CudaTensor(logProb:size()):fill(unifValue)
-        --local unifKDistr = topKUniform(logProb,5)
-        --local unifKDistr = topKUniform_2(logProb,100)
-        local confidMix = computeMixDistr_2(confidScore,logProb,100)
-	return confidMix
-end
-
 function Confidence:forwardLoss(confidScore,logProb,target)
     if self.confidCriterionType == 'MSE' then 
-        local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.labelValue,self.correctBeam)
-        self.confidLoss = {self.confidenceCriterion:forward(confidScore,correctPredictions),0}
+        local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.labelValue)
+        self.confidLoss = self.confidenceCriterion:forward(confidScore,correctPredictions)
         self.correctPredictions = correctPredictions:cuda()
 		self:updateCounts()
 
 	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
 		--self.unifKDistr,self.unifValue = topKUniform(logProb,self.K)
-		local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.labelValue)
+		local correctPredictions = utils.extractCorrectPredictions(logProb,target,self.labelValue
 		self.correctPredictions = correctPredictions
 		self.unifValue = -1*torch.log(30000)
 		self.unifKDistr = torch.CudaTensor(logProb:size()):fill(self.unifValue)
 		self.confidMix = computeMixDistr(confidScore,logProb,self.unifKDistr)
-		local confidLoss = self.confidenceCriterion:forward(self.confidMix:cuda(),target:cuda()) --/logProb:size(1)
+		local confidLoss = (self.confidenceCriterion:forward(self.confidMix,target))/logProb:size(1)
 		self.confidLoss = {}
 		table.insert(self.confidLoss,confidLoss)
-		if self.matchingObjective == 1 then 
+		if self.matchingObjective == 1 then
         	local matchingLoss = self.matchingObjective:forward(self.confidScore,self.correctPredictions)
         	table.insert(self.confidLoss,matchingLoss)
-		end
+        end
 
     elseif self.confidCriterionType == 'mixtureCrossEnt' then
         local oracleMixtureDistr = computeOracleMixtureDistr(confidScore,self.logProb,target)
@@ -223,27 +140,11 @@ function Confidence:forwardLoss(confidScore,logProb,target)
 end
 
 
-function computeMixDistr_2(weight,logProb1,k)
-    local logWeight = torch.log(weight):expandAs(logProb1)
-    local secondWeight = 1 - weight
-    local unifValue = 1/k 
-    local _,ind=logProb1:topk(k,true)
-    local result = torch.add(logProb1,logWeight) 
-    for i=1,ind:size(1) do
-	local w = secondWeight[i][1]
-	local unifAdd = unifValue*w 
-	for j=1,k do
-		result[i][ind[i][j]]= torch.log(torch.exp(result[i][ind[i][j]]) + unifAdd) 
-	end	
-    end
-    return result
-end
-
 function computeMixDistr(weight,logProb1,logProb2)
     local logWeight = torch.log(weight):expandAs(logProb1) -- tensor
     local logSecondWeight = torch.log(1 - weight)
     local firstAdd = logProb1 + logWeight
-    local diff = torch.add(logSecondWeight:expand(logProb2:size()),logProb2:cuda()) - firstAdd
+    local diff = logSecondWeight:expand(logProb2:size()) + logProb2 - firstAdd
     local result = firstAdd + torch.log(torch.exp(diff) + 1)
     return result
 end
@@ -264,7 +165,6 @@ function Confidence:backward(inputState,target,logProb)
 	if self.confidCriterionType == 'MSE' then 
 		gradConfidCriterion = self.confidenceCriterion:backward(self.confidScore,self.correctPredictions)
 	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
-		
 		gradConfidCriterion = torch.ones(target:size())
 		--[[local topPr,ind = logProb:topk(self.K,true)
 		for i=1,target:size(1) do
@@ -278,27 +178,19 @@ function Confidence:backward(inputState,target,logProb)
 		end]]--
 
 		local gradOutputDistr = self.confidenceCriterion:backward(self.confidMix,target:view(-1))
-		local gradMixture = torch.cmul(gradOutputDistr,self.confidMix)
-		--print(self.confidScore[1])
-		--print(gradMixture[1]:sum())	
+		local gradMixture = torch.cmul(gradOutputDistr,self.confidMix)	
 		local gradLogprob = torch.cmul(gradOutputDistr,logProb) 
 		self.confidMix = torch.exp(torch.sum(torch.mul(gradMixture,-1),2))
 		gradConfidCriterion = gradConfidCriterion:cuda()
 		gradConfidCriterion:cdiv(self.confidMix)
-		--print(gradConfidCriterion[1])
-		local prCorr = torch.exp(torch.mul(torch.sum(gradLogprob,2),-1))
+		local prCorr = torch.mul(torch.sum(gradLogprob,2),-1)
 		local prUnif = torch.exp(self.unifValue)
-		--local diff = prCorr - prUnif
-		--print(diff[1])
 		gradConfidCriterion:cmul(prCorr-prUnif)
-		--print(gradConfidCriterion[1])
-		gradConfidCriterion = torch.mul(gradConfidCriterion,-1)
+
 		if self.matchingObjective == 1 then
 			local correctPredictions = utils.extractCorrectPredictions(logProb,target,'binary')
-			local matchingGradient = self.matchingCriterion:backward(self.confidScore,correctPredictions)
+			local matchingGradient = self.matchingObjective:backward(self.confidScore,correctPredictions)
 			gradConfidCriterion = 0.5 *(gradConfidCriterion/logProb:size(1)) + 0.5 * matchingGradient
-			--print(gradConfidCriterion[1])
-			--print('---')
 		end
 		
 	elseif self.confidCriterionType == 'mixtureCrossEnt' then
