@@ -12,6 +12,8 @@ require 'tardis.BeamSearch'
 local timer = torch.Timer()
 local cfg = require 'pl.config'
 local opt = cfg.read(arg[1])
+print('BLA')
+print(arg[1])
 if not opt.gpuid then opt.gpuid = 0 end
 torch.manualSeed(opt.seed or 42)
 cutorch.setDevice(opt.gpuid + 1)
@@ -27,6 +29,9 @@ opt.padIdx = loader.padIdx
 local model = nn.NMT(opt)
 model:type('torch.CudaTensor')
 -- prepare data
+if opt.restart == 1 then
+	model:load(opt.restartModel)
+end
 function prepro(input)
     local x, y = unpack(input)
     local seqlen = y:size(2)
@@ -66,7 +71,7 @@ function train()
                 collectgarbage()
             end
         end
-        if epoch >= opt.decayAfter then
+        if epoch >= opt.decayAfter or opt.restart == 1 then
             opt.learningRate = opt.learningRate * 0.5
         end
 
@@ -116,5 +121,7 @@ else
         io.write(string.format('translated sentence %d\r', nlines))
         io.flush()
     end
+    local aveEnt = bs:getAveEnt()
+    print(aveEnt)
     file:close()
 end
