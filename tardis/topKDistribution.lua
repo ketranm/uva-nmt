@@ -14,6 +14,7 @@ function totalLogMass(topDistr)
 	local max,ind = topDistr:topk(1,true)
 	max = max:expand(topDistr:size())
 	local diff = topDistr - max:expand(topDistr:size())
+	print(torch.exp(diff))
 	local logsumexp = max[{{},{1}}] + torch.log(torch.sum(torch.exp(diff),2))
 	return logsumexp
 end
@@ -43,13 +44,18 @@ function topKUniform_2(distribution,k)
 	return result
 end
 
-function uniformizeExpert_1(logProb,upperTopK,lowerTopK)
+function uniformizeExpert_1(logProb,upperTopK,maxK)
 	-- keep top-k as it is, uniformize everything else
 	local topDistr,ind = logProb:topk(upperTopK,true)
-	local totalLogMassTopK = totalLogMass(topDistr)
-	local restNum = 30000 - upperTopK
-	local unifValue = (1-torch.exp(totalLogMassTopK))/restNum
-	local result = torch.Tensor(logProb:size()):fill(math.huge)
+	local totalLogMassTopK = nil
+	if upperTopK == 1 then
+		totalLogMassTopK = topDistr
+	else
+		totalLogMassTopK = totalLogMass(topDistr)
+	end
+	local restNum = maxK - upperTopK 
+	local unifValue = torch.log((1-torch.exp(totalLogMassTopK))/restNum)
+	local result = torch.Tensor(logProb:size())
 	for i=1,ind:size(1) do
 		result[{i,{}}]:fill(unifValue[i][1])
 		for j=1,ind:size(2) do
