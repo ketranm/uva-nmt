@@ -42,3 +42,30 @@ function topKUniform_2(distribution,k)
 	end
 	return result
 end
+
+function uniformizeExpert_1(logProb,upperTopK,lowerTopK)
+	-- keep top-k as it is, uniformize everything else
+	local topDistr,ind = logProb:topk(upperTopK,true)
+	local totalLogMassTopK = totalLogMass(topDistr)
+	local restNum = 30000 - upperTopK
+	local unifValue = (1-torch.exp(totalLogMassTopK))/restNum
+	local result = torch.Tensor(logProb:size()):fill(math.huge)
+	for i=1,ind:size(1) do
+		for j=1,ind:size(2) do
+			result[i][ind[i][j]] = topDistr[i][j]
+		end
+	end
+	for i=1,logProb:size(1) do
+		local unif = unifValue[i][1]
+		for j=1,logProb:size(2) do
+			if result[i][j] == math.huge then result[i][j] = unif end
+		end
+	end
+	return result:cuda()
+end
+
+
+function uniformizeExpert_2(logProb,upperTopK,lowerTopK)
+	--uniformize within top-k, removing lowerTopK
+	
+end
