@@ -67,5 +67,19 @@ end
 
 function uniformizeExpert_2(logProb,upperTopK,lowerTopK)
 	--uniformize within top-k, removing lowerTopK
+	local unifValue = torch.log(1/(upperTopK - lowerTopK))
+	local _,ind = logProb:topk(upperTopK,true)
+	local result = logProb:clone()
+	for i=1,ind:size(1) do
+		for j=lowerTopK+1,ind:size(2) do
+			result[i][ind[j]] = unifValue
+		end
+	end
+	return result:cuda()
+end
+
+
+
+
 	
 end
