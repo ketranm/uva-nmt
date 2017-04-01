@@ -3,7 +3,7 @@ require 'tardis.topKDistribution'
 local utils = require 'misc.utils'
 local Confidence, parent = torch.class('nn.ConfidenceMultiClass', 'nn.Confidence')
 
-function Confidence:__init(inputSize,hidSize,confidCriterion,classes,opt)
+function Confidence:__init(inputSize,hidSize,classes,confidCriterion,opt)
     local num_hid = opt.num_hid
     self.classes = classes
     self.classesCounts  =  {}  -- table of the form {1,20,100} means top-1,top-20 without 1, top-100 without top-20,rest (outside of top 100)
@@ -73,6 +73,21 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,classes,opt)
     end
 end
 
+function Confidence:correctStatistics()
+	local result = {}
+	for class,count in pairs(self.classesCounts) do 
+		result[class] = count/self.total
+	end
+	return result
+end	
+
+function Confidence:clearStatistics()
+	self.total = 0
+	for cl,count in pairs(self.classesCounts) do
+		self.classesCounts[cl] = 0
+	end
+end
+
 function Confidence:updateCounts()
 	for i=1,self.beamClasses:size(1) do
 		self.classesCounts[self.beamClasses[i]] = self.classesCounts[self.beamClasses[i]]+1
@@ -82,9 +97,9 @@ end
 
 function Confidence:forwardLoss(confidScore,logProb,target)
     if self.confidCriterionType == 'NLL' then 
-        local beamClasses = utils.extractBeamRegionOfCorrect(logProb,target,self.classes)
+        local beamClasses = utils.extractBeamRegionOfCorrect(logProb,target,self.classes):cuda()
         self.confidLoss = {self.confidenceCriterion:forward(confidScore,beamClasses),0}
-        self.beamClasses = correctPredictions:cuda()
+        self.beamClasses = beamClasses:cuda()
 		self:updateCounts()
     end 
 end

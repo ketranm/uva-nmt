@@ -124,14 +124,14 @@ function utils.extractCorrectPredictions(logProbTensor,targetTensor,labelValue,c
 	end	
 end	
 
-function utils.extractbeamRegionOfCorrect(logProbTensor,targetTensor,classes)
+function utils.extractBeamRegionOfCorrect(logProbTensor,targetTensor,classes)
     local topDistr,ind = logProbTensor:topk(classes[#classes],true)
     local foundIndex = torch.Tensor(logProbTensor:size(1)):fill(4)
     local classes = classes
     
     function getClass(index)
-        for _,cl in ipairs(classes) do
-            if index == cl or index < cl then return cl end
+        for i,cl in ipairs(classes) do
+            if index == cl or index < cl then return i end
         end
     end
 
