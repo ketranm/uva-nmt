@@ -51,14 +51,9 @@ function uniformizeExpert_1(logProb,upperTopK,lowerTopK)
 	local unifValue = (1-torch.exp(totalLogMassTopK))/restNum
 	local result = torch.Tensor(logProb:size()):fill(math.huge)
 	for i=1,ind:size(1) do
+		result[{i,{}}]:fill(unifValue[i][1])
 		for j=1,ind:size(2) do
 			result[i][ind[i][j]] = topDistr[i][j]
-		end
-	end
-	for i=1,logProb:size(1) do
-		local unif = unifValue[i][1]
-		for j=1,logProb:size(2) do
-			if result[i][j] == math.huge then result[i][j] = unif end
 		end
 	end
 	return result:cuda()
