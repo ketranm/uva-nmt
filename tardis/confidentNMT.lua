@@ -5,6 +5,7 @@ require 'tardis.FastTransducer'
 require 'moses'
 require 'tardis.SeqAtt'
 require 'tardis.Confidence'
+require 'tardis.ConfidenceMultiClass'
 local model_utils = require 'tardis.model_utils'
 
 local utils = require 'misc.utils'
@@ -35,8 +36,9 @@ function NMT:__init(opt)
     if opt.confidenceOneClass == 1 then
         self.confidence = nn.Confidence(hiddenSize,confidenceHidSize,opt.confidCriterion,opt)
     elseif opt.confidenceMultiClass == 1 then
-        for c in opt.confidClasses:gmatch("%S+") do
-        self.confidence = nn.ConfidenceMultiClass(hiddenSize,confidenceHidSize,opt.confidCriterion,opt)
+	local classes = {}
+        for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
+        self.confidence = nn.ConfidenceMultiClass(hiddenSize,confidenceHidSize,classes,opt.confidCriterion,opt)
     end
         self.confidWeight = opt.confidWeight
     
@@ -56,6 +58,7 @@ function NMT:__init(opt)
     self.optimStates = {}
 
 end
+	
 function NMT:correctStatistics()
 	return self.confidence:correctStatistics()
 end
