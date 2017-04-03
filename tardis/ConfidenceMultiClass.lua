@@ -1,6 +1,6 @@
 require 'tardis.PairwiseLoss'
 require 'tardis.topKDistribution'
-require 'utils.LogProbMixtureTable'
+require 'misc.LogProbMixtureTable'
 local utils = require 'misc.utils'
 local Confidence, parent = torch.class('nn.ConfidenceMultiClass', 'nn.Confidence')
 
@@ -36,7 +36,6 @@ function Confidence:__init(inputSize,hidSize,classes,confidCriterion,opt)
         self.confidenceCriterion = nn.ClassNLLCriterion()
         --self.confidenceCriterion = nn.ClassNLLCriterion(torch.ones(2),true)
     elseif confidCriterion == 'mixtureRandomGuessTopK' then
-    	slelf.
     	self.maxK = opt.maxK
     	self.confidenceCriterion = nn.ClassNLLCriterion()--false,false)
     	self.mixtureTable = nn.LogProbMixtureTable()
@@ -78,6 +77,11 @@ function Confidence:correctStatistics()
 	end
 	return result
 end	
+function Confidence:clearState()
+	self.confidence:clearState()
+	self.experts = nil
+	self.weightedExperts = nil
+end	
 
 function Confidence:clearStatistics()
 	self.total = 0
@@ -103,14 +107,16 @@ function Confidence:forwardLoss(confidScore,logProb,target)
 		local experts = {}
 		local prevClass = 0
 		for _,cl in ipairs(self.classes) do
-			table.insert(experts,uniformizeExpert_1(logProb,cl,prevClass))
+			table.insert(experts,uniformizeExpert_2(logProb,cl,prevClass))
 			prevClass = cl
 		end
-		table.insert(experts,uniformizeExpert_1(logProb,self.maxK,prevClass))
-		self.weightedExperts = self.mixtureTable:forward({self.confidScore,experts)
-		local loss = self.confidenceCriterion:forward(self.weightedExperts,target)
+		table.insert(experts,uniformizeExpert_2(logProb,self.maxK,prevClass))
+		self.experts = experts
+		local weightedExperts = self.mixtureTable:forward({confidScore,experts})
+		local loss = self.confidenceCriterion:forward(weightedExperts,target:view(-1))
+		self.weightedExperts = weightedExperts 
 		self.confidLoss = {loss,0}
-		self:updateCounts()
+		--self:updateCounts()
     end 
 end
 
@@ -120,10 +126,13 @@ function Confidence:backward(inputState,target,logProb)
    	local gradConfidCriterion = nil
 	if self.confidCriterionType == 'NLL' then 
 		gradConfidCriterion = self.confidenceCriterion:backward(self.confidScore,self.beamClasses)
-	elseif self.confidenceCriterion == 'mixtureRandomGuessTopK' then
-		gradConfidCriterion = self.mixtureTable(self.confidScore,self.confidenceCriterion:backward(self.weightedExperts,target))
+	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
+		local mixtureCriterion = self.confidenceCriterion:backward(self.weightedExperts,target:view(-1))
+		--print(mixtureCriterion)
+		gradConfidCriterion = self.mixtureTable:backward({self.confidScore,self.experts},mixtureCriterion)	
+		--print(gradConfidCriterion)
 	end
-	local gradConfid = self.confidence:backward(inputState,gradConfidCriterion)
+	local gradConfid = self.confidence:backward(inputState,gradConfidCriterion[1])
 	return gradConfid
 end
 

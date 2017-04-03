@@ -14,7 +14,6 @@ function totalLogMass(topDistr)
 	local max,ind = topDistr:topk(1,true)
 	max = max:expand(topDistr:size())
 	local diff = topDistr - max:expand(topDistr:size())
-	print(torch.exp(diff))
 	local logsumexp = max[{{},{1}}] + torch.log(torch.sum(torch.exp(diff),2))
 	return logsumexp
 end
@@ -68,12 +67,14 @@ end
 
 function uniformizeExpert_2(logProb,upperTopK,lowerTopK)
 	--uniformize within top-k, removing lowerTopK
-	local unifValue = torch.log(1/(upperTopK - lowerTopK))
+	local beam = upperTopK - lowerTopK	
+	local unifValue = torch.log((999+beam)/(1000*beam))
 	local _,ind = logProb:topk(upperTopK,true)
-	local result = logProb:clone()
-	for i=1,ind:size(1) do
+	local result = torch.Tensor(logProb:size()):fill(torch.log(1/1000))
+	 
+	for i=1,ind:size(1) do			
 		for j=lowerTopK+1,ind:size(2) do
-			result[i][ind[j]] = unifValue
+			result[i][ind[i][j]] = unifValue 
 		end
 	end
 	return result:cuda()
@@ -83,4 +84,3 @@ end
 
 
 	
-end

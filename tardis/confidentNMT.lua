@@ -181,6 +181,11 @@ function NMT:extractConfidenceScores()
     return self.confidence.confidScore
 end
 
+function NMT:extractConfidenceClass()
+    local _,ind = self.confidence.confidScore:topk(1,true)
+    return ind
+end
+
 function NMT:predictTargetLabel()
     local logProb = self.outputLayer:forward(self.hidLayerOutput)
     self.logProb = logProb

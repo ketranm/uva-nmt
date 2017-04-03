@@ -112,6 +112,22 @@ function NMT:extractCorrectPredictions(target,beam)
     
 end
 
+function NMT:extractRanksOfCorrect(target)
+	local target = target:view(-1)
+	local bla,ind = self.logProb:topk(200,true)
+	local result = torch.Tensor(self.logProb:size(1)):fill(250)
+	for i=1,ind:size(1) do
+		local t = target[i]
+		for j=1,ind:size(2) do
+			if ind[i][j] == t then
+				result[i] = j 
+				break
+			end
+		end
+	end
+	return result
+end
+				
 
 function NMT:extractPairwiseLoss(target)
     local topValues,predictions = self.logProb:topk(1,true)
