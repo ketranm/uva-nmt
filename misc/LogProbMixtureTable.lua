@@ -8,12 +8,13 @@ function LogProbMixtureTable:__init(dim)
    self.size2 = torch.LongStorage()
    self.backwardSetup = false
    self.gradInput = {} -- gradient passed back
+   self.gaterActivation = nn.LogSoftMax()
 end
 
 -- gating weights are expected to be in log space!!
-function LogProbMixtureTable:updateOutput(input) 
+function LogProbMixtureTable:updateOutput(input)
    local gaterInput, expertInputs = table.unpack(input)
-   
+--   gaterInput = self.gaterActivation:forward(gaterInput)
    -- buffers 
    self._gaterView = self._gaterView or input[1].new() -- new() creates instance of the same type
    self._expert = self._expert or input[1].new()
@@ -51,7 +52,8 @@ function LogProbMixtureTable:updateOutput(input)
 
    for i,expertInput in ipairs(expertInputs) do
       local gate = self._gaterView:select(self.dim,i):expandAs(expertInput)
-      table.insert(weigtedExperts,expertInput:add(gate))
+      local weighted = expertInput+gate
+      table.insert(weigtedExperts,weighted)
    end
 
    --[[local logProducts = torch.cat(combinedWeigtedExperts,3)
@@ -64,27 +66,32 @@ function LogProbMixtureTable:updateOutput(input)
 
    return self.output
    ]]--
-   local secondAdd  = torch.exp(weigtedExperts[2]-weigtedExperts[1])
-   local oneTensor = torch.CudaTensor():expandAs(secondAdd):fill(1.0)
-   secondAdd = torch.log(secondAdd+oneTensor)
+   local secondAdd = torch.exp(weigtedExperts[2]-weigtedExperts[1])
+   local i = 3
+   while i < 1+ #expertInputs do
+      secondAdd  = secondAdd +  torch.exp(weigtedExperts[i]-weigtedExperts[1])
+      i=i+1
+   end
+   --local oneTensor = torch.Tensor(secondAdd:size()):fill(1.0)
+   --print(oneTensor:type())
+   local sumexp = secondAdd+1.0
+   secondAdd = torch.log(sumexp)
    self.output = weigtedExperts[1] + secondAdd
    return self.output
 end
 
 
  
-function MixtureTable:updateGradInput(input, gradOutput)
+function LogProbMixtureTable:updateGradInput(input, gradOutput)
    local gaterInput, expertInputs = table.unpack(input)
    nn.utils.recursiveResizeAs(self.gradInput, input)
    local gaterGradInput, expertGradInputs = table.unpack(self.gradInput)
-   
    -- buffers
    self._sum = self._sum or input[1].new()
    self._expertView2 = self._expertView2 or input[1].new()
    self._expert2 = self._expert2 or input[1].new()
-      
 
-   if not self.backwardSetup then -- whether grad inputs have been initialized
+   --[[if not self.backwardSetup then -- whether grad inputs have been initialized
       for i,expertInput in ipairs(expertInputs) do
          local expertGradInput = expertGradInputs[i] or expertInput:clone()
          expertGradInput:resizeAs(expertInput)
@@ -92,14 +99,13 @@ function MixtureTable:updateGradInput(input, gradOutput)
       end
       gaterGradInput:resizeAs(gaterInput)
       self.backwardSetup = true
-   end
-   
+   end]]--
+   --print(commonGradInput[{{1,1},{}}])
    -- like CMulTable, but with broadcasting
-   for i,expertGradInput in ipairs(expertGradInputs) do
+   for i,expertInput in ipairs(expertInputs) do
       -- gater updateGradInput
-      self._expert:cmul(gradOutput, torch.exp(self.output:mul(-1))) -- OLD: elementwise multiplication of grad from above and i-th expert values
-      self._expert:cmul(torch.exp(expertGradInput))
-      self._expert:mul(torch.exp(gaterInput[i]))
+      local grad = expertInput - self.output-- torch.add(self.output,expertInput)
+      self._expert:cmul(torch.exp(grad),gradOutput) 
       
       if self.dimG == 1 then
          self._expertView:view(self._expert, -1)
@@ -107,13 +113,14 @@ function MixtureTable:updateGradInput(input, gradOutput)
          self._expertView:view(self._expert, gradOutput:size(1), -1)
       end
       self._sum:sum(self._expertView, self.dimG)
+      self._sum:cmul(torch.exp(gaterInput[{{},{i,i}}]))
+      --print(self._sum)
       if self.dimG == 1 then
          gaterGradInput[i] = self._sum:select(self.dimG,1)
       else
          gaterGradInput:select(self.dimG,i):copy(self._sum:select(self.dimG,1))
       end
 
-      gaterGradInput
       
       -- expert updateGradInput
       --local gate = self._gaterView:select(self.dim,i):expandAs(expertGradInput)
@@ -133,7 +140,7 @@ function LogProbMixtureTable:type(type, tensorCache)
    return parent.type(self, type, tensorCache)
 end
 
-function MLogProbixtureTable:clearState()
+function LogProbMixtureTable:clearState()
    nn.utils.clear(self, {
      '_gaterView',
      '_expert',
