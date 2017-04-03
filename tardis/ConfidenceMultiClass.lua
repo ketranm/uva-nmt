@@ -77,6 +77,10 @@ function Confidence:correctStatistics()
 	end
 	return result
 end	
+
+
+
+
 function Confidence:clearState()
 	self.confidence:clearState()
 	self.experts = nil
@@ -134,5 +138,19 @@ function Confidence:backward(inputState,target,logProb)
 	end
 	local gradConfid = self.confidence:backward(inputState,gradConfidCriterion[1])
 	return gradConfid
+end
+
+function Confidence:computeUniformMix(inputState,logProb)
+    local confidScore = self:computeConfidScore(inputState)
+    local experts = {}
+    local prevClass = 0
+    for _,cl in ipairs(self.classes) do
+        table.insert(experts,uniformizeExpert_2(logProb,cl,prevClass))
+        prevClass = cl
+    end
+    table.insert(experts,uniformizeExpert_2(logProb,self.maxK,prevClass))
+    local weightedExperts = self.mixtureTable:forward({confidScore,experts})
+    return weightedExperts
+
 end
 
