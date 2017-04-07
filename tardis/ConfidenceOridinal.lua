@@ -47,7 +47,7 @@ end
 
 function Confidence:forwardLoss(confidScore,logProb,target)
     if self.confidCriterionType == 'NLL' then 
-        local beamClasses = utils.extractBeamRegionOfCorrectOrdinal(logProb,target,self.classes):cuda()
+        local beamClasses = utils.extractBeamRegionOfCorrect(logProb,target,self.classes):cuda()
         self.confidLoss = {self.confidenceCriterion:forward(confidScore,beamClasses),0}
         self.beamClasses = beamClasses:cuda()
 		self:updateCounts()

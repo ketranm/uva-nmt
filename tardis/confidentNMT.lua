@@ -6,6 +6,7 @@ require 'moses'
 require 'tardis.SeqAtt'
 require 'tardis.Confidence'
 require 'tardis.ConfidenceMultiClass'
+require 'tardis.ConfidenceOridinal'
 local model_utils = require 'tardis.model_utils'
 
 local utils = require 'misc.utils'
