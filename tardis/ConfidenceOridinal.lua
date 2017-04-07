@@ -3,7 +3,7 @@ require 'tardis.topKDistribution'
 require 'misc.LogProbMixtureTable'
 require 'tardis.ensembleCombination'
 local utils = require 'misc.utils'
-local Confidence, parent = torch.class('nn.ConfidenceMultiClass', 'nn.Confidence')
+local Confidence, parent = torch.class('nn.ConfidenceOrdinal', 'nn.Confidence')
 
 function Confidence:__init(inputSize,hidSize,classes,confidCriterion,opt)
     local num_hid = opt.num_hid
@@ -36,76 +36,18 @@ function Confidence:__init(inputSize,hidSize,classes,confidCriterion,opt)
     if confidCriterion == 'NLL' then
         self.confidenceCriterion = nn.ClassNLLCriterion()
         --self.confidenceCriterion = nn.ClassNLLCriterion(torch.ones(2),true)
-    elseif confidCriterion == 'mixtureRandomGuessTopK' then
-    	self.maxK = opt.maxK
-    	self.confidenceCriterion = nn.ClassNLLCriterion()--false,false)
-    	self.mixtureTable = nn.LogProbMixtureTable()
-    	
-    elseif confidCriterion == 'mixtureCrossEnt' then
-        self.confidenceCriterion = nn.ClassNLLCriterion()
-    elseif confidCriterion == 'pairwise' then
-	self.confidenceCriterion_1 = nn.PairwiseLoss(opt)
-        self.confidenceCriterion_2 = nn.MSECriterion()
-    end
-    self.confidCriterionType = confidCriterion
-    
-    if opt.labelValue ~=nil then
-    	self.labelValue = opt.labelValue
-    else
-    	self.labelValue = 'binary'
-    end
-    self.gradDownweight = 0.25
-    if opt.downweightClass ~=nil then self.downweightClass = opt.downweightClass end
-    if opt.labelValue ~=nil  then		
-	self.labelValue = opt.labelValue
-    else 
-	self.labelValue = 'binary'
     end
     
 end
 
-function Confidence:updateParameters(opt)
-     self.maxK = opt.maxK
-    parent.updateParameters(self,opt)
-   self.mixtureTable = nn.LogProbMixtureTable()
-   self.mixtureTable:cuda()
-   self.uniformSmoothingFunc = scalarCombination({0.5,0.5},30000,'prob')
-    
-end
-function Confidence:correctStatistics()
-	local result = {}
-	for class,count in pairs(self.classesCounts) do 
-		result[class] = count/self.total
-	end
-	return result
-end	
 
 
 
 
-function Confidence:clearState()
-	self.confidence:clearState()
-	self.experts = nil
-	self.weightedExperts = nil
-end	
-
-function Confidence:clearStatistics()
-	self.total = 0
-	for cl,count in pairs(self.classesCounts) do
-		self.classesCounts[cl] = 0
-	end
-end
-
-function Confidence:updateCounts()
-	for i=1,self.beamClasses:size(1) do
-		self.classesCounts[self.beamClasses[i]] = self.classesCounts[self.beamClasses[i]]+1
-	end
-	self.total = self.total + self.beamClasses:size(1)
-end
 
 function Confidence:forwardLoss(confidScore,logProb,target)
     if self.confidCriterionType == 'NLL' then 
-        local beamClasses = utils.extractBeamRegionOfCorrect(logProb,target,self.classes):cuda()
+        local beamClasses = utils.extractBeamRegionOfCorrectOrdinal(logProb,target,self.classes):cuda()
         self.confidLoss = {self.confidenceCriterion:forward(confidScore,beamClasses),0}
         self.beamClasses = beamClasses:cuda()
 		self:updateCounts()
@@ -138,17 +80,9 @@ end
 function Confidence:backward(inputState,target,logProb)
    	local gradConfidCriterion = nil
 	if self.confidCriterionType == 'NLL' then 
-		gradConfidCriterion = self.confidenceCriterion:backward(self.confidScore,self.beamClasses)
-		if self.downweightClass ~=nil then
-			local gradientWeights = self:computePerinstanceWeights()
-			gradConfidCriterion:cmul(gradientWeights:view(-1,1):expand(gradConfidCriterion:size()))
-		end
-	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
-		local mixtureCriterion = self.confidenceCriterion:backward(self.weightedExperts,target:view(-1))
-		--print(mixtureCriterion)
-		gradConfidCriterion = self.mixtureTable:backward({self.confidScore,self.experts},mixtureCriterion)	
-		--print(gradConfidCriterion)
-	end
+        local cumulativeTargets = turnIntoCumulativeTarget(self.beamClasses,#self.classes+1)
+        gradConfidCriterion = torch.cmul(cumulativeTargets - self.confidScore,cumulativeTargets)
+end
 	local gradConfid = self.confidence:backward(inputState,gradConfidCriterion)--[1])
 	return gradConfid
 end

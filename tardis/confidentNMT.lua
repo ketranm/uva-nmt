@@ -35,9 +35,13 @@ function NMT:__init(opt)
     if opt.confidenceOneClass == 1 then
         self.confidence = nn.Confidence(hiddenSize,confidenceHidSize,opt.confidCriterion,opt)
     elseif opt.confidenceMultiClass == 1 then
-	local classes = {}
+	   local classes = {}
         for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
         self.confidence = nn.ConfidenceMultiClass(hiddenSize,confidenceHidSize,classes,opt.confidCriterion,opt)
+    elseif opt.condenceOrdinal == 1 then 
+        local classes = {}
+        for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
+        self.confidence = nn.ConfidenceOrdinal(hiddenSize,confidenceHidSize,classes,opt.confidCriterion,opt)
     end
         self.confidWeight = opt.confidWeight
     
