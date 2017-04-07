@@ -126,7 +126,7 @@ end
 
 function utils.extractBeamRegionOfCorrect(logProbTensor,targetTensor,classes)
     local topDistr,ind = logProbTensor:topk(classes[#classes],true)
-    local foundIndex = torch.Tensor(logProbTensor:size(1)):fill(4)
+    local foundIndex = torch.Tensor(logProbTensor:size(1)):fill(#classes+1)
     local classes = classes
     
     function getClass(index)
