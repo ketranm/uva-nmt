@@ -147,6 +147,16 @@ function utils.extractBeamRegionOfCorrect(logProbTensor,targetTensor,classes)
     return foundIndex
 end 
 
+function turnIntoCumulativeTarget(classVector,numClasses)
+    local result = torch.Tensor(classVector:size(1),numClasses):fill(0)
+    for i=1,classVector:size(1) do
+        for j=classVector[i],numClasses do
+            result[i][j]=1
+        end
+    end
+    return result:cuda()
+
+end
 
 function utils.reverse(t, dim)
     --[[ Reverse tensor along the specified dimension
