@@ -78,6 +78,7 @@ function Confidence:__init(inputSize,hidSize,confidCriterion,opt)
 end
 
 function Confidence:updateParameters(opt)
+    print(self.maxK)
      local confidCriterion = opt.confidCriterion	
     if confidCriterion == 'MSE' then
         self.confidenceCriterion = nn.MSECriterion():cuda()

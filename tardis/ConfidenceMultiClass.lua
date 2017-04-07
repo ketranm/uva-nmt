@@ -1,6 +1,7 @@
 require 'tardis.PairwiseLoss'
 require 'tardis.topKDistribution'
 require 'misc.LogProbMixtureTable'
+require 'tardis.ensembleCombination'
 local utils = require 'misc.utils'
 local Confidence, parent = torch.class('nn.ConfidenceMultiClass', 'nn.Confidence')
 
@@ -22,16 +23,16 @@ function Confidence:__init(inputSize,hidSize,classes,confidCriterion,opt)
     elseif num_hid == 3 then
     	self.confidence:add(nn.Linear(hidSize,hidSize))
     	self.confidence:add(nn.Tanh())
-		self.confidence:add(nn.Linear(hidSize,hidSize))
-		self.confidence:add(nn.Tanh())
-		self.confidence:add(nn.Dropout(0.2))
+	self.confidence:add(nn.Linear(hidSize,hidSize))
+	self.confidence:add(nn.Tanh())
+	self.confidence:add(nn.Dropout(0.2))
     end
     self.confidence:add(nn.Linear(hidSize,#classes+1))
     self.confidence:add(nn.LogSoftMax())
 
     
     --self.confidence:add(nn.LogSoftMax())
-
+    self.maxK = opt.maxK
     if confidCriterion == 'NLL' then
         self.confidenceCriterion = nn.ClassNLLCriterion()
         --self.confidenceCriterion = nn.ClassNLLCriterion(torch.ones(2),true)
@@ -53,23 +54,24 @@ function Confidence:__init(inputSize,hidSize,classes,confidCriterion,opt)
     else
     	self.labelValue = 'binary'
     end
-    self.downweightBAD = false 
-    self.gradDownweight = 0.5
-    self.good = 0
-    self.total = 0
-    self.downweightOK = false 
-    if opt.downweightOK == 1 then
-	self.downweightOK = true 
-     	self.gradDownweight = opt.gradDownweight 
-    end
-    self.correctBeam = opt.correctBeam
+    self.gradDownweight = 0.25
+    if opt.downweightClass ~=nil then self.downweightClass = opt.downweightClass end
     if opt.labelValue ~=nil  then		
 	self.labelValue = opt.labelValue
     else 
 	self.labelValue = 'binary'
     end
+    
 end
 
+function Confidence:updateParameters(opt)
+     self.maxK = opt.maxK
+    parent.updateParameters(self,opt)
+   self.mixtureTable = nn.LogProbMixtureTable()
+   self.mixtureTable:cuda()
+   self.uniformSmoothingFunc = scalarCombination({0.5,0.5},30000,'prob')
+    
+end
 function Confidence:correctStatistics()
 	local result = {}
 	for class,count in pairs(self.classesCounts) do 
@@ -124,19 +126,30 @@ function Confidence:forwardLoss(confidScore,logProb,target)
     end 
 end
 
+function Confidence:computePerinstanceWeights()
+	local classVector = torch.Tensor(self.beamClasses:size()):fill(self.downweightClass):cuda()
+	local weightVector = torch.Tensor(self.beamClasses:size()):fill(1):cuda()
+	weightVector:csub(torch.mul(torch.eq(classVector,self.beamClasses),(1-self.gradDownweight)):cuda())
+	return weightVector
+end
 
+	
 
 function Confidence:backward(inputState,target,logProb)
    	local gradConfidCriterion = nil
 	if self.confidCriterionType == 'NLL' then 
 		gradConfidCriterion = self.confidenceCriterion:backward(self.confidScore,self.beamClasses)
+		if self.downweightClass ~=nil then
+			local gradientWeights = self:computePerinstanceWeights()
+			gradConfidCriterion:cmul(gradientWeights:view(-1,1):expand(gradConfidCriterion:size()))
+		end
 	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
 		local mixtureCriterion = self.confidenceCriterion:backward(self.weightedExperts,target:view(-1))
 		--print(mixtureCriterion)
 		gradConfidCriterion = self.mixtureTable:backward({self.confidScore,self.experts},mixtureCriterion)	
 		--print(gradConfidCriterion)
 	end
-	local gradConfid = self.confidence:backward(inputState,gradConfidCriterion[1])
+	local gradConfid = self.confidence:backward(inputState,gradConfidCriterion)--[1])
 	return gradConfid
 end
 
@@ -150,7 +163,8 @@ function Confidence:computeUniformMix(inputState,logProb)
     end
     table.insert(experts,uniformizeExpert_2(logProb,self.maxK,prevClass))
     local weightedExperts = self.mixtureTable:forward({confidScore,experts})
-    return weightedExperts
+    local final = self.uniformSmoothingFunc({weightedExperts,logProb})
+    return final 
 
 end
 

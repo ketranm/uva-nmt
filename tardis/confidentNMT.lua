@@ -32,7 +32,6 @@ function NMT:__init(opt)
     self.hidLayer:add(nn.View(-1, 2 * hiddenSize))
     self.hidLayer:add(nn.Linear(2 * hiddenSize, hiddenSize, false))
     self.hidLayer:add(nn.Tanh())
-
     if opt.confidenceOneClass == 1 then
         self.confidence = nn.Confidence(hiddenSize,confidenceHidSize,opt.confidCriterion,opt)
     elseif opt.confidenceMultiClass == 1 then
@@ -64,9 +63,17 @@ function NMT:correctStatistics()
 end
 
 function NMT:loadConfidence(modelFile,opt)
-    local conf = nn.Confidence(1000,500,'MSE',opt)
+    local conf = nil
+    if opt.confidenceMultiClass == 1 then
+	local classes = {}
+        for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
+	conf = nn.ConfidenceMultiClass(1000,500,classes,'NLL',opt)
+    else
+    	conf = nn.Confidence(1000,500,'MSE',opt)
+    end
 	conf = torch.load(modelFile)
-     self.confidence = conf:cuda() 
+	
+     	self.confidence = conf:cuda()
 end
 
 function NMT:loadModelWithoutConfidence(model)
