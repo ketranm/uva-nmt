@@ -31,13 +31,9 @@ function Confidence:__init(inputSize,hidSize,classes,confidCriterion,opt)
     self.confidenceDecision:add(nn.Linear(hidSize,#classes+1))
     self.activation = nn.LogSigmoid()
 
-    self.interpolationGate = nn.Sequential()
-    self.interpolationGate:add(nn.Linear(inputSize+hidSize,inputSize))
-    self.interpolationGate:add(nn.Tanh())
-    self.interpolationGate:add(nn.Linear(inputSize,2))
-    self.interpolationGate:add(nn.LogSoftMax())
-    self.interpolationTable = nn.LogProbMixtureTable()
-    self.interpolationCriterion = nn.ClassNLLCriterion() 
+    self:createMixer(inputSize,hidSize)
+
+    
     --self.confidence:add(nn.LogSoftMax())
     self.maxK = opt.maxK
     if confidCriterion == 'NLL' then
@@ -47,9 +43,30 @@ function Confidence:__init(inputSize,hidSize,classes,confidCriterion,opt)
     self.confidCriterionType = confidCriterion    
 end
 
+function Confidence:createMixer(inputSize,hidSize)
+	local input = nn.ParallelTable()
+	local experts = nn.ParallelTable()
+	experts:add(nn.Identity())
+	experts:add(nn.Identity())
+    local interpolationGate = nn.Sequential()
+    interpolationGate:add(nn.Linear(inputSize+hidSize,inputSize))
+    interpolationGate:add(nn.Tanh())
+    interpolationGate:add(nn.Linear(inputSize,2))
+    interpolationGate:add(nn.LogSoftMax())
+    input:add(interpolationGate)
+    input:add(experts)
+
+    self.mixer = nn.Sequential()
+    self.mixer:add(input)
+    self.mixer:add(nn.LogProbMixtureTable())
+    self.mixerCriterion = nn.ClassNLLCriterion() 
+end
+
+
+
 function Confidence:unnormalizedConfidScore(inputState)
-	self.confidenceHidScore = self.confidence:forward(inputState)
-	local confidenceUnnorm = self.confidenceDecision:forward(self.confidenceHidScore)
+	self.confidenceHidState = self.confidence:forward(inputState)
+	local confidenceUnnorm = self.confidenceDecision:forward(self.confidenceHidState)
 	return confidenceUnnorm
 end
 
@@ -78,11 +95,13 @@ end
 function Confidence:forwardLoss(confidScore,logProb,target,inputState)
     if self.confidCriterionType == 'NLL' then 
         local beamClasses = utils.extractBeamRegionOfCorrect(logProb,target,self.classes):cuda()
-	local classSpecificLogProb = convertCumulativeToClassSpecific(confidScore)
-   	local smoothedLogProb = self:computeSmoothedOutput(logProb,classSpecificLogProb)
-	self.smoothingInterpolation = self:computeSmootingInterpolation(logProb,smoothedLogProb,inputState)
-	 
-        self.confidLoss = {self.confidenceCriterion:forward(classSpecificLogProb,beamClasses),self.interpolationCriterion:forward(smoothingInterpolation,target)}
+		local classSpecificLogProb = convertCumulativeToClassSpecific(confidScore)
+   		local smoothingLogProb = self:computeSmoothedOutput(logProb,classSpecificLogProb)
+		self.classSpecificLogProb = classSpecificLogProb
+		self.smoothingLogProb = smoothingLogProb
+		self.smoothedInterpolation = self:computeSmoothedInterpolation(logProb,smoothedLogProb,inputState)
+	 	
+        self.confidLoss = {self.confidenceCriterion:forward(classSpecificLogProb,beamClasses),self.mixerCriterion:forward(smoothingInterpolation,target)}
         self.beamClasses = beamClasses:cuda()
 	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
 		local experts = {}
@@ -126,23 +145,22 @@ function Confidence:backward(inputState,target,logProb)
         	gradConfidCriterion = (torch.exp(self.confidScore) - cumulativeTargets)
 		--dont propagate frequent classes
 		if self.infrequentClassTrain then
-		local removeFrequentClass = 1 - torch.eq(torch.ones(self.beamClasses:size()):cuda(),self.beamClasses)
-		gradConfidCriterion:cmul(removeFrequentClass:type('torch.CudaTensor'):view(-1,1):expandAs(gradConfidCriterion))
-		end
-		--
+		--local removeFrequentClass = 1 - torch.eq(torch.ones(self.beamClasses:size()):cuda(),self.beamClasses)
+		--gradConfidCriterion:cmul(removeFrequentClass:type('torch.CudaTensor'):view(-1,1):expandAs(gradConfidCriterion))
+		--end
 	end
-	local gradMixer = self:backwardInterpolationGate(inputState,self.confidenceHidScore,logProb,self.smoothedLogProb,self.smoothingInterpolation,target)
+	local gradMixer = self:backwardMixerGate(inputState,self.confidenceHidState,logProb,self.smoothingLogProb,self.smoothedInterpolation,target)
 	if self.backpropagateFromMixerToConfidenceClass then gradConfidCriterion = gradConfidCriterion + gradMixer end 
 	local gradConfid = self.confidence:backward(inputState,gradConfidCriterion)--[1])
 	return gradConfid
 end
 
 
-function Confidence:backwardInterpolationGate(decoderState,confidenceState,logProb,smoothedLogProb,interpolatedDistr,target)
-	local gradCrit = self.interpolationCriterion(interpolatedDistr,target)
-	local gradTable = self.interpolationTable:backward({self.mixerWeights,{logProb,smoothedLogProb}},gradCrit)
-	local gradMixer = gradTable[1]
-	return self.interpolationGate:backward({} 
+function Confidence:backwardInterpolationGate(decoderState,confidenceState,logProb,smoothingLogProb,interpolatedDistr,target)
+	local gradCrit = self.mixerCriterion:backward(interpolatedDistr,target)
+	local gradMixer = self.mixer:backward({self.mixerWeights,{logProb,smoothingLogProb}},gradCrit)
+	return gradMixer[1]
+end
 	
 
 function Confidence:computeConfidScore(inputState)
