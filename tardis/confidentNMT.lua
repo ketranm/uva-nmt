@@ -81,19 +81,41 @@ function NMT:correctStatistics()
 	return self.confidence:correctStatistics()
 end
 
+
 function NMT:loadConfidence(modelFile,opt)
     local conf = nil
     if opt.confidenceMultiClass == 1 then
 	local classes = {}
         for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
-	conf = nn.ConfidenceMultiClass(1000,500,classes,'NLL',opt)
+	    conf = nn.ConfidenceMultiClass(1000,500,classes,'NLL',opt)
+    elseif opt.confidenceOrdinal == 1 then
+        for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
+        conf = nn.ConfidenceOrdinal(1000,500,classes,'NLL',opt)
+    elseif opt.confidenceOrdinalWithMixer == 1 then
+        for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
+        conf = nn.ConfidenceOrdinalWithMixer(1000,500,classes,'NLL',opt)
     else
     	conf = nn.Confidence(1000,500,'MSE',opt)
     end
 	conf = torch.load(modelFile)
 	
-     	self.confidence = conf:cuda()
+    self.confidence = conf:cuda()
 end
+
+function NMT:loadConfidenceOrdinalForMixerTraining(modelFile,opt)
+    for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
+    conf = nn.ConfidenceOrdinal(1000,500,classes,'NLL',opt)
+    conf = torch.load(modelFile)
+    mixerConf = nn.ConfidenceOrdinalWithMixer(1000,500,classes,'NLL',opt)
+    local numLayersToCopy = 4
+    if opt.num_hid == 3 then
+        numLayersToCopy = numLayersToCopy + 5
+    end
+    for i=1,numLayersToCopy do mixerConf.confidence:get(i) = conf.confidence:get(i) end
+    mixerConf.confidenceDecision:get(1) = conf.confidence:get(numLayersToCopy+1) 
+    self.confidence = mixerConf:cuda()
+end
+
 
 function NMT:loadModelWithoutConfidence(model)
     self.encoder= model.encoder
@@ -164,9 +186,9 @@ function NMT:backward(input, target,mode)
         hidLayerGradOutput = self.outputLayer:backward(self.hidLayerOutput,gradXent)
     elseif self.trainingScenario == 'joint' then
         local gradXent = self.criterion:backward(self.logProb, target:view(-1))
-	local gradConfid = self.confidence:backward(self.hidLayerOutput,target)
+	    local gradConfid = self.confidence:backward(self.hidLayerOutput,target)
         local gradOutputLayer = self.outputLayer:backward(self.hidLayerOutput,gradXent)
-	hidLayerGradOutput =  torch.mul(gradOutputLayer,self.NLLweight):add(torch.mul(gradConfid,self.confidWeight))
+	    hidLayerGradOutput =  torch.mul(gradOutputLayer,self.NLLweight):add(torch.mul(gradConfid,self.confidWeight))
     end
 	
         
