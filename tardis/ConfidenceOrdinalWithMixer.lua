@@ -50,6 +50,11 @@ function Confidence:__init(inputSize,hidSize,classes,confidCriterion,opt)
 	self.backpropagateFromMixerToConfidenceClass = false
     end 
 	
+    if opt.trainMixerOnly == 1 then
+        self.mixerTraining = true
+    else
+        self.mixerTraining = false
+    end
 end
 
 function Confidence:createMixer(inputSize,hidSize)
@@ -73,6 +78,7 @@ function Confidence:createMixer(inputSize,hidSize)
 end
 
 function Confidence:loadConfidenceOrdinalWithoutMixer(modelFile)
+
 
 function Confidence:forwardConfidScore(inputState)
 	self.confidenceHidState = self.confidence:forward(inputState)
@@ -160,11 +166,15 @@ end
 
 function Confidence:backward(inputState,target,logProb)
    	local gradConfidCriterion = nil
-	if self.confidCriterionType == 'NLL' then
+	if self.confidCriterionType == 'NLL' and not self.mixerTraining then
         	local cumulativeTargets = turnIntoCumulativeTarget(self.beamClasses,#self.classes+1)
         	gradConfidCriterion = (torch.exp(self.confidScore) - cumulativeTargets)
 	end
 	local gradMixer = self:backwardMixerGate(inputState,self.confidenceHidState,logProb,self.smoothingLogProb,self.smoothedInterpolation,target:view(-1))
+    if self.mixerTraining then
+        return gradMixer
+    end
+
 	local gradDecision = self.confidenceDecision:backward(self.confidenceHidState,gradConfidCriterion)
 	if self.backpropagateFromMixerToConfidenceClass then gradDecision = gradDecision + gradMixer end 
 	local gradConfid = self.confidence:backward(inputState,gradDecision)
