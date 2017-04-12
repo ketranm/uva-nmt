@@ -23,15 +23,17 @@ function Confidence:__init(inputSize,hidSize,classes,confidCriterion,opt)
     elseif num_hid == 3 then
     	self.confidence:add(nn.Linear(hidSize,hidSize))
     	self.confidence:add(nn.Tanh())
-	self.confidence:add(nn.Linear(hidSize,hidSize))
-	self.confidence:add(nn.Tanh())
-	self.confidence:add(nn.Dropout(0.2))
+	   self.confidence:add(nn.Linear(hidSize,hidSize))
+	   self.confidence:add(nn.Tanh())
+	   self.confidence:add(nn.Dropout(0.2))
     end
     self.confidenceDecision = nn.Sequential() 
     self.confidenceDecision:add(nn.Linear(hidSize,#classes+1))
     self.activation = nn.LogSigmoid()
 
+    --for smoothing distribution:
     self.mixtureTable = nn.LogProbMixtureTable()
+    --to mix original and smoothing distributions:
     self:createMixer(inputSize,hidSize)
 
     
@@ -72,15 +74,15 @@ end
 
 
 
-function Confidence:unnormalizedConfidScore(inputState)
+function Confidence:forwardConfidScore(inputState)
 	self.confidenceHidState = self.confidence:forward(inputState)
 	local confidenceUnnorm = self.confidenceDecision:forward(self.confidenceHidState)
-	return confidenceUnnorm
+    local confidScore = self.activation:forward(confidenceUnnorm)
+	return confidScore
 end
 
 function Confidence:forward(inputState,logProb,target)
-	local confidScore = self:unnormalizedConfidScore(inputState)
-	confidScore = self.activation:forward(confidScore)
+	local confidScore = self:forwardConfidScore(inputState)
 	self:forwardLoss(confidScore,logProb,target,inputState)
 	self.confidScore = confidScore
 	return self.confidLoss
@@ -103,13 +105,13 @@ end
 function Confidence:forwardLoss(confidScore,logProb,target,inputState)
     if self.confidCriterionType == 'NLL' then 
         local beamClasses = utils.extractBeamRegionOfCorrect(logProb,target,self.classes):cuda()
-	local classSpecificLogProb = convertCumulativeToClassSpecific(confidScore)
-   	local smoothingLogProb = self:computeSmoothingOutput(logProb,classSpecificLogProb)
-	self.classSpecificLogProb = classSpecificLogProb
-	self.smoothingLogProb = smoothingLogProb
-	self.smoothedInterpolation = self:computeSmoothedInterpolation(logProb,smoothingLogProb,inputState,self.confidenceHidState)
-	-- self.confidLoss = {self.confidenceCriterion:forward(classSpecificLogProb,beamClasses),0}
-	self.confidLoss = {self.confidenceCriterion:forward(classSpecificLogProb,beamClasses),self.mixerCriterion:forward(self.smoothedInterpolation,target:view(-1))}
+	    local classSpecificLogProb = convertCumulativeToClassSpecific(confidScore)
+   	    local smoothingLogProb = self:computeSmoothingOutput(logProb,classSpecificLogProb)
+	    self.classSpecificLogProb = classSpecificLogProb
+	    self.smoothingLogProb = smoothingLogProb
+	    self.smoothedInterpolation = self:computeSmoothedInterpolation(logProb,smoothingLogProb,inputState,self.confidenceHidState)
+	    -- self.confidLoss = {self.confidenceCriterion:forward(classSpecificLogProb,beamClasses),0}
+	    self.confidLoss = {self.confidenceCriterion:forward(classSpecificLogProb,beamClasses),self.mixerCriterion:forward(self.smoothedInterpolation,target:view(-1))}
         self.beamClasses = beamClasses:cuda()
 	elseif self.confidCriterionType == 'mixtureRandomGuessTopK' then
 		local experts = {}

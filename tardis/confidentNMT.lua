@@ -120,7 +120,9 @@ function NMT:type(type)
                                            self.glimpse,
                                            self.hidLayer,
                                            self.outputLayer,
-                                           self.confidence.confidence)
+                                           self.confidence.confidence,
+                                           self.confidence.confidenceDecision,
+                                           self.confidence.mixer)
 end
 
 function NMT:load(fileName)
