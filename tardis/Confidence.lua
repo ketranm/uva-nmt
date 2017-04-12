@@ -150,6 +150,10 @@ function Confidence:correctStatistics()
 	local shareBad = bad/self.total
 	return shareGood, shareBad
 end
+
+	
+
+
 function Confidence:forward(inputState,logProb,target)
 	local confidScore = self.confidence:forward(inputState)
 	self:forwardLoss(confidScore,logProb,target)	

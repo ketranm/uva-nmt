@@ -6,7 +6,8 @@ require 'moses'
 require 'tardis.SeqAtt'
 require 'tardis.Confidence'
 require 'tardis.ConfidenceMultiClass'
-require 'tardis.ConfidenceOridinal'
+require 'tardis.ConfidenceOrdinal'
+require 'misc.LogProbMixtureTable'
 local model_utils = require 'tardis.model_utils'
 
 local utils = require 'misc.utils'
@@ -39,13 +40,21 @@ function NMT:__init(opt)
 	   local classes = {}
         for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
         self.confidence = nn.ConfidenceMultiClass(hiddenSize,confidenceHidSize,classes,opt.confidCriterion,opt)
-    elseif opt.condenceOrdinal == 1 then 
+    elseif opt.confidenceOrdinal == 1 then
+	self.interpolationGate = nn.Sequential()
+	self.interpolationGate:add(nn.Linear(inputSize+hiddenSize,inputSize))
+	self.interpolationGate:add(nn.Tanh())
+	self.interpolationGate:add(nn.Linear(inputSize,2))
+	self.interpolationGate:add(nn.LogSoftMax())
+	self.interpolation = nn.LogProbMixtureTable()
+        self.confidenceOrdinal = 1
         local classes = {}
         for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
         self.confidence = nn.ConfidenceOrdinal(hiddenSize,confidenceHidSize,classes,opt.confidCriterion,opt)
+	print('BLA')
     end
         self.confidWeight = opt.confidWeight
-    
+   print(opt) 
     self.outputLayer = nn.Sequential()
     self.outputLayer:add(nn.Linear(hiddenSize, targetSize, true))
     self.outputLayer:add(nn.LogSoftMax())
@@ -60,7 +69,12 @@ function NMT:__init(opt)
     -- for optim
     self.optimConfig = {learningRate = 0.001, beta1 = 0.9, beta2 = 0.999, learningRateDecay = 0.0001}
     self.optimStates = {}
-
+    self.hiddenNoise = false 
+    if opt.hiddenNoise == 1 then
+	self.hiddenNoise = true
+        self.generator = torch.Generator()
+        self.sigma = opt.sigma
+   end
 end
 	
 function NMT:correctStatistics()
@@ -118,6 +132,9 @@ function NMT:forward(input, target)
     local target = target:view(-1)
     self:stepEncoder(input[1])
     self:stepDecoderUpToHidden(input[2])
+    if self.hiddenNoise then
+	self:injectGaussianNoise(input[2]:size(1),input[2]:size(2))
+    end
     self:predictTargetLabel()
     local mainLoss = self.criterion:forward(self.logProb,target)
     --change
@@ -179,11 +196,26 @@ function NMT:stepDecoderUpToHidden(x)
     self.prevStates = self.decoder:lastStates()
 end
 
+
+function NMT:injectGaussianNoise(batchSize,seqSize)
+   local hidSize = self.hidLayerOutput:size(2)
+   local timeSlices = {}
+   for t=1,seqSize do
+	table.insert(timeSlices,torch.normal(torch.Tensor(batchSize,1,hidSize),self.generator,0,self.sigma/t))
+   end
+   self.hidLayerOutput = self.hidLayerOutput + torch.cat(timeSlices,2):cuda()
+end
+
+
+
 function NMT:stepDecoder(x)
 	self.decoder:setStates(self.prevStates)
 	self.decOutput = self.decoder:forward(x)
 	self.cntx = self.glimpse:forward{self.encOutput, self.decOutput}
 	self.hidLayerOutput = self.hidLayer:forward{self.cntx, self.decOutput}
+	if self.hiddenNoise then
+        	self:injectGaussianNoise(x:size(1),x:size(2))
+    	end
 	self.prevStates = self.decoder:lastStates()
 	local logProb = self:predictTargetLabel()	
 	local uniformMix = self.confidence:computeUniformMix(self.hidLayerOutput,logProb)
@@ -194,8 +226,12 @@ function NMT:extractConfidenceScores()
 end
 
 function NMT:extractConfidenceClass()
-    local _,ind = self.confidence.confidScore:topk(1,true)
-    return ind
+    if self.confidenceOrdinal == 1 then
+    	local probs,ind = convertCumulativeToClassSpecific(self.confidence.confidScore):topk(1,true)
+        return ind,probs
+    end
+    local probs,ind = self.confidence.confidScore:topk(1,true)
+    return ind,probs
 end
 
 function NMT:predictTargetLabel()
