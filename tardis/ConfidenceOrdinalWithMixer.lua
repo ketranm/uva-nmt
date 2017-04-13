@@ -57,6 +57,22 @@ function Confidence:__init(inputSize,hidSize,classes,confidCriterion,opt)
     end
 end
 
+function Confidence:loadModelWithoutMixer(model,opt)
+	local numLayersToCopy = 4
+    	if opt.num_hid == 3 then
+        	numLayersToCopy = numLayersToCopy + 5
+    	end
+	local newConfidence = nn.Sequential()
+	for i=1,numLayersToCopy do
+		newConfidence:add(model.confidence:get(i))
+	end
+	self.confidence = newConfidence
+	local decision = nn.Sequential()
+	decision:add(model.confidence:get(numLayersToCopy+1))
+	self.confidenceDecision = decision
+		
+end
+
 function Confidence:createMixer(inputSize,hidSize)
 	local input = nn.ParallelTable()
 	local experts = nn.ParallelTable()
@@ -77,7 +93,6 @@ function Confidence:createMixer(inputSize,hidSize)
     self.mixerCriterion = nn.ClassNLLCriterion() 
 end
 
-function Confidence:loadConfidenceOrdinalWithoutMixer(modelFile)
 
 
 function Confidence:forwardConfidScore(inputState)
@@ -138,6 +153,12 @@ end
 
 function Confidence:clearState()
 	self.confidence:clearState()
+	self.mixer:clearState()
+	self.confidenceDecision:clearState()
+    	self.activation:clearState()
+	self.mixtureTable:clearState()
+    --for smoothing distribution:
+    --    self.mixtureTable = nn.LogProbMixtureTable()
 	self.experts = nil
         self.weightedExperts = nil
 	self.classSpecificLogProb = nil 

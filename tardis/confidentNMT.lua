@@ -7,6 +7,7 @@ require 'tardis.SeqAtt'
 require 'tardis.Confidence'
 require 'tardis.ConfidenceMultiClass'
 require 'tardis.ConfidenceOrdinal'
+require 'tardis.ConfidenceOrdinalWithMixer'
 require 'misc.LogProbMixtureTable'
 local model_utils = require 'tardis.model_utils'
 
@@ -51,7 +52,11 @@ function NMT:__init(opt)
         local classes = {}
         for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
         self.confidence = nn.ConfidenceOrdinal(hiddenSize,confidenceHidSize,classes,opt.confidCriterion,opt)
-	print('BLA')
+    elseif opt.confidenceOrdinalWithMixer == 1 then
+	print('BBBBB')
+	local classes = {}
+        for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
+        self.confidence = nn.ConfidenceOrdinalWithMixer(hiddenSize,confidenceHidSize,classes,opt.confidCriterion,opt)
     end
         self.confidWeight = opt.confidWeight
    print(opt) 
@@ -89,9 +94,11 @@ function NMT:loadConfidence(modelFile,opt)
         for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
 	    conf = nn.ConfidenceMultiClass(1000,500,classes,'NLL',opt)
     elseif opt.confidenceOrdinal == 1 then
+	local classes = {}
         for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
         conf = nn.ConfidenceOrdinal(1000,500,classes,'NLL',opt)
     elseif opt.confidenceOrdinalWithMixer == 1 then
+	local classes = {}
         for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
         conf = nn.ConfidenceOrdinalWithMixer(1000,500,classes,'NLL',opt)
     else
@@ -103,16 +110,12 @@ function NMT:loadConfidence(modelFile,opt)
 end
 
 function NMT:loadConfidenceOrdinalForMixerTraining(modelFile,opt)
+    local classes = {}
     for c in opt.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
     conf = nn.ConfidenceOrdinal(1000,500,classes,'NLL',opt)
     conf = torch.load(modelFile)
     mixerConf = nn.ConfidenceOrdinalWithMixer(1000,500,classes,'NLL',opt)
-    local numLayersToCopy = 4
-    if opt.num_hid == 3 then
-        numLayersToCopy = numLayersToCopy + 5
-    end
-    for i=1,numLayersToCopy do mixerConf.confidence:get(i) = conf.confidence:get(i) end
-    mixerConf.confidenceDecision:get(1) = conf.confidence:get(numLayersToCopy+1) 
+    mixerConf:loadModelWithoutMixer(conf,opt)
     self.confidence = mixerConf:cuda()
 end
 
