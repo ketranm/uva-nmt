@@ -1,5 +1,5 @@
 local _ = require 'moses'
-
+require 'tardis.topKDistribution'
 function scalarCombination(scWeights,outputDim,inputType)
 	local weights = scWeights
 	--print(weights)
@@ -225,5 +225,47 @@ function confidenceMixture(confidenceScoreCombination)
 	return comb
 end
 
+function oracleSmoothing(weights,classes,maxK)
+	local weights = weights
+	local logWeights = _.map(weights,function(i,v) return torch.log(v) end)
+	local classes = classes
+	local maxK = maxK
+	function weightedSum(tableOutputs) 
+		local weigtedExperts = _.map(tableOutputs, function(i,v) return v:add(logWeights[i]) end)	
+   		local secondAdd  = torch.exp(weigtedExperts[2]-weigtedExperts[1])
+   		local oneTensor = torch.CudaTensor(secondAdd:size()):fill(1.0)
+   		secondAdd = torch.log(secondAdd+oneTensor)
+   		return weigtedExperts[1] + secondAdd
+	end
 
+	function comb(tableOutputs)
+		-- weight it with 1 for now
+		local _,expertCorrectIndex = tableOutputs[2]:topk(1,true)
+		expertCorrectIndex = expertCorrectIndex[1]
+		local _,rankedClasses = tableOutputs[1]:topk(classes[#classes],true)
+		local rankOfCorrect = classes[#classes] + 1
+		for i=1,rankedClasses:size(1) do
+			if rankedClasses[i][1] == expertCorrectIndex then
+				rankOfCorrect = i
+			end
+		end
+		local smoothingDistr = nil
+		if rankOfCorrect == classes[#classes] + 1 then
+			smoothingDistr = uniformizeExpert_2(tableOutputs[1],maxK,classes[#classes])
+		else
+			local prevClass = 0
+			for _,cl in ipairs(classes) do
+				if rankOfCorrect > prevClass and rankOfCorrect < cl then
+					smoothingDistr = uniformizeExpert_2(tableOutputs[1],cl,prevClass)
+				else
+					prevClass = cl
+				end
+			end
+		end
+		return weightedSum(tableOutputs[1],smoothingDistr)
+	end
+	return comb
+end
 
+		
+		

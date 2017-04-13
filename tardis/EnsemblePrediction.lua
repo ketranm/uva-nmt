@@ -98,6 +98,10 @@ function EnsemblePrediction:__init(kwargs,multiKwargs)
     elseif self.combinMethod == 'confidMutualInterp' then
         self.combinMachine = confidenceMutualInterp(kwargs.direction)
         self.direction = kwargs.direction
+    elseif self.combinMethod == 'oracleSmoothing' then
+        local classes = {}
+        for c in kwargs.confidClasses:gmatch("%S+") do table.insert(classes,tonumber(c)) end
+        self.combinMachine = oracleSmoothing(scalarWeights,classes,kwargs.maxK)
     end
     
     return self
